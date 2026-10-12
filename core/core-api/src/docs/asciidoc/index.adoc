@@ -33,8 +33,8 @@
 | O003 | 409 | 취소할 수 없는 주문 상태
 | O004 | 409 | 결제 대기 주문 한도 초과
 | P001 | 404 | 결제 없음
-| S001 | 404 | 배송 없음
-| S002 | 409 | 허용되지 않는 배송 상태 전이
+| P002 | 409 | 승인 대기 상태가 아닌 결제
+| P003 | 502 | PG 가 승인하지 않음 (결제는 FAILED 로 남음)
 |===
 
 === VO 검증 실패 예시
@@ -51,7 +51,7 @@ include::{snippets}/member-register/response-fields.adoc[]
 
 == 주문 API
 
-=== 주문 생성 (주문 + 남은 결제 대기 주문 수)
+=== 주문 생성
 include::{snippets}/order-place/curl-request.adoc[]
 include::{snippets}/order-place/request-fields.adoc[]
 include::{snippets}/order-place/http-response.adoc[]
@@ -68,25 +68,13 @@ include::{snippets}/order-cancel-conflict/response-fields.adoc[]
 == 결제 API
 
 === 결제
+결제 요청을 먼저 저장하고(REQUESTED), PG 승인 뒤 결제 승인과 주문 PAID 를 함께 커밋한다.
+
 include::{snippets}/payment-pay/curl-request.adoc[]
 include::{snippets}/payment-pay/request-fields.adoc[]
 include::{snippets}/payment-pay/http-response.adoc[]
 include::{snippets}/payment-pay/response-fields.adoc[]
 
-== 배송 API
-
-=== 출고
-include::{snippets}/shipping-ship/curl-request.adoc[]
-include::{snippets}/shipping-ship/path-parameters.adoc[]
-include::{snippets}/shipping-ship/http-response.adoc[]
-include::{snippets}/shipping-ship/response-fields.adoc[]
-
-== 조회 API (query 컨텍스트)
-
-여러 컨텍스트의 테이블을 읽기 전용 SQL 로 묶어 한 화면용 모델을 돌려준다.
-
-=== 주문 상세
-include::{snippets}/query-order-detail/curl-request.adoc[]
-include::{snippets}/query-order-detail/path-parameters.adoc[]
-include::{snippets}/query-order-detail/http-response.adoc[]
-include::{snippets}/query-order-detail/response-fields.adoc[]
+=== PG 가 승인하지 않았을 때
+include::{snippets}/payment-pay-failed/http-response.adoc[]
+include::{snippets}/payment-pay-failed/response-fields.adoc[]

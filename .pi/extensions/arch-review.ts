@@ -1,8 +1,8 @@
 /**
- * /arch-review — 아키텍처 의미 규칙(S-01~S-11) 리뷰.
+ * /arch-review — 아키텍처 의미 규칙(S-01~S-08) 리뷰.
  *
  *   pi                                       대화형. 프롬프트에 /arch-review [--base <ref>] [--diff <patch>] [--no-archunit]
- *   pi --approve -p "/arch-review" </dev/null 비대화형. 종료 코드 0 PASS, 1 BLOCK(S-04/S-06 위반), 2 WARN
+ *   pi --approve -p "/arch-review" </dev/null 비대화형. 종료 코드 0 PASS, 1 BLOCK(S-05/S-07 위반), 2 WARN
  *
  * 설정은 저장소 루트의 .env 에서 읽는다 (.env.example 참고).
  *   ARCH_REVIEW_MODEL=anthropic/claude-sonnet-4-5   리뷰 턴에만 쓸 모델. 비우면 현재 모델
@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 const COMMAND = "/arch-review";
 const MARKER = "<!-- arch-review -->";
 const READ_ONLY_TOOLS = ["read", "grep", "find", "ls"];
-const BLOCKING_RULES = new Set(["S-04", "S-06"]);
+const BLOCKING_RULES = new Set(["S-05", "S-07"]);
 
 interface Options {
 	base: string;

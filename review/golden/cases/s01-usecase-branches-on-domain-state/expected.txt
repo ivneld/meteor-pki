@@ -1,1 +1,0 @@
-S-01 UseCase 가 주문 상태로 분기한다. Order.cancel() 이 이미 규칙을 갖고 있다

@@ -1,0 +1,13 @@
+diff --git a/a/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java b/b/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java
+index b4effb2..3afbd71 100644
+--- a/a/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java
++++ b/b/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java
+@@ -33,7 +33,7 @@ public class OrderWriter {
+     public Order cancel(Long orderId) {
+         Order order = load(orderId);
+         order.cancel();
+-        return orderRepository.save(order);
++        return order;
+     }
+ 
+     public Order markPaid(Long orderId) {

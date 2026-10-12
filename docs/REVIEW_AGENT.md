@@ -55,7 +55,7 @@ pi --approve -p --no-session "/arch-review" < /dev/null
 | 종료 코드 (`-p`) | 의미 | 처리 |
 |---|---|---|
 | 0 | PASS. findings 없음 | 리뷰를 요청한다 |
-| 1 | BLOCK. S-04, S-06 위반 | 고치거나 ADR 로 예외를 기록한 뒤 다시 돌린다 |
+| 1 | BLOCK. S-05, S-07 위반 | 고치거나 ADR 로 예외를 기록한 뒤 다시 돌린다 |
 | 2 | WARN. 그 외 위반 또는 suspect | 판단해서 고치거나 리뷰 요청에 사유를 적는다 |
 
 대화형에서는 판정이 알림(notify)으로 뜬다. 결과 본문은 `findings:` 목록과 `result:` 한 줄이다. 각 finding 에는 규칙 ID, 파일과 줄,
@@ -95,16 +95,16 @@ review/
 | `before_agent_start` | 그 턴에만 도구를 `read, grep, find, ls` 로 제한하고, `review/prompts/reviewer.md` 를 시스템 프롬프트에 붙이고, `ARCH_REVIEW_MODEL` 이 있으면 그 모델로 바꾼다 | 리뷰어는 코드를 고치지 않는다. 다른 턴의 설정은 건드리지 않는다 |
 | `agent_end` | findings 를 파싱해 PASS/WARN/BLOCK 을 내고 도구와 모델을 되돌린다. 비대화형이면 종료 코드로 전달한다 | 훅과 CI 가 판정을 쓸 수 있어야 한다 |
 
-에이전트는 diff 만으로 판단이 안 되면 read/grep 으로 같은 컨텍스트의 파일을 직접 읽는다. 그래서 저장소 안에서 실행해야 한다.
+에이전트는 diff 만으로 판단이 안 되면 read/grep 으로 관련 애그리거트, 도메인 서비스, usecase 파일을 직접 읽는다. 그래서 저장소 안에서 실행해야 한다.
 `ARCH_REVIEW_DEBUG=1` 을 주면 실제로 보낸 프롬프트가 `build/arch-review-prompt.md` 에 남는다.
 
 ## 역할 분담
 
 | 수단 | 맡는 규칙 | 성격 |
 |---|---|---|
-| ArchUnit (`./gradlew test`) | R-01 ~ R-11 | 결정적. 전체 코드 그래프를 본다. 위반이면 머지 불가 |
-| 리뷰 에이전트 | S-01 ~ S-11 | 의미 판단. PR diff 와 주변 코드를 본다. 규칙별로 차단/권고를 정한다 |
-| 사람 | 설계 판단 | 경계가 맞는지, 규칙 자체를 바꿔야 하는지 |
+| ArchUnit (`./gradlew test`) | R-01 ~ R-13 | 결정적. 전체 코드 그래프를 본다. 위반이면 머지 불가 |
+| 리뷰 에이전트 | S-01 ~ S-08 | 의미 판단. PR diff 와 주변 코드를 본다. 규칙별로 차단/권고를 정한다 |
+| 사람 | 설계 판단 | usecase 가 필요한지, 트랜잭션을 나누는 게 맞는지, 규칙 자체를 바꿔야 하는지 |
 
 ## 에이전트 입력
 
@@ -112,7 +112,7 @@ review/
 2. 변경 파일 목록
 3. `docs/ARCHITECTURE.md` 와 이 문서의 판단 가이드
 4. ArchUnit 실행 결과 (실패한 규칙 ID 목록). 실패가 있으면 그 맥락에서 의미 위반을 찾는다
-5. 같은 컨텍스트의 나머지 파일은 에이전트가 read/grep 으로 직접 읽는다. 확장이 미리 모아 주지 않는다
+5. 관련 파일(애그리거트, 도메인 서비스, usecase)은 에이전트가 read/grep 으로 직접 읽는다. 확장이 미리 모아 주지 않는다
 
 ## 프롬프트
 
@@ -128,22 +128,19 @@ review/
 
 | 규칙 | 확인 방법 | 오탐 주의 |
 |---|---|---|
-| S-01 | `*UseCase` 본문에서 도메인 객체의 getter 결과로 분기하는 `if`/`switch` | 입력 검증(null, 빈 값)은 위반 아님 |
-| S-02 | `domain` 의 애그리거트에 public setter, 상태 변경 메서드 부재, UseCase 가 `restore(...)` 로 새 상태를 조립 | record VO 는 대상 아님. 상태 전이·계산·정책이 없는 설정·코드 관리 기능의 단순 모델은 위반 아님 |
-| S-03 | `*Controller` 에서 `of`/`from`/getter 외의 VO 메서드 호출 | Request → Command 변환은 허용 |
-| S-04 | `domain` 클래스 필드 타입이 다른 컨텍스트의 애그리거트. `storage` 엔티티의 `@ManyToOne` 등이 다른 컨텍스트 엔티티. 다른 컨텍스트 테이블로의 FK | ID 타입(VO) 보유는 허용 |
-| S-05 | 다른 컨텍스트의 `*Event` 를 받는 리스너의 트랜잭션 선택. 발행 측과 함께 성공·실패해야 하는 처리(상태 전이, 금액 확정)를 `@TransactionalEventListener` 로 받음. 반대로 실패해도 발행 측이 유효한 부가 처리(알림, 외부 연동, 배송 준비)를 `@EventListener` 로 같은 트랜잭션에 묶음 | 판단 근거가 diff 에 없으면 suspect 로 표시하고 이유를 묻는다 |
-| S-06 | 다른 컨텍스트 테이블에 대한 INSERT/UPDATE/DELETE(다른 컨텍스트의 `*Repository` 로 저장하는 것 포함), `query` 컨텍스트 밖의 쿼리에 다른 컨텍스트 테이블 등장 | 같은 컨텍스트 내부 JOIN, `query` 컨텍스트의 읽기 전용 JOIN 은 허용 |
-| S-07 | `@TransactionalEventListener` 리스너가 핵심 흐름을 처리함, 리스너가 부르는 UseCase 메서드에 `REQUIRES_NEW` 가 없음, 실패를 감지할 수단(로그 알림, 점검 쿼리)이 없음 | `@EventListener` 동기 리스너는 S-05 에서 본다 |
-| S-08 | `storage`/`clients` 클래스 안의 도메인 상태 분기, 계산 | null 처리와 타입 변환은 허용 |
-| S-09 | UseCase 가 애그리거트 메서드를 호출한 뒤 `save()` 없이 반환 | 읽기 전용 UseCase 는 대상 아님 |
-| S-10 | `*Facade` 가 상태를 `String`·`boolean` 으로 우회해 내주고(`getStatusName()`, `isPaid()`), 호출자가 그 값으로 분기 | `ensureXxx()` 처럼 판단 후 예외로 거절하는 메서드, `payableAmount()` 처럼 판단을 거친 값은 정상 |
-| S-11 | `*UseCase` 가 저장소 조회 결과(건수, 목록)를 직접 비교해 거절·분기 | Policy 에 사실을 넘기기만 하는 것은 정상 |
+| S-01 | `*UseCase`, `*Reader`, `*Writer` 본문에서 도메인 객체의 getter 결과(상태 enum 등)로 분기하는 `if`/`switch` | 입력 검증(null, 빈 값)은 위반 아님 |
+| S-02 | domain 의 애그리거트에 public setter, 상태 변경 메서드 부재, 도메인 서비스가 `restore(...)` 로 새 상태를 조립 | record VO 는 대상 아님. 상태 전이·계산·정책이 없는 설정·코드 관리 기능의 단순 모델은 위반 아님 |
+| S-03 | `*Controller` 에서 `of`/`from`/getter 외의 VO 메서드 호출 | Request → Command·도메인 서비스 인자 변환은 허용 |
+| S-04 | `*Writer` 나 `*UseCase` 가 저장소 조회 결과(건수, 목록, 합계)를 직접 비교해 거절·분기 | 사실을 꺼내 `*Policy` 나 애그리거트에 넘기기만 하는 것은 정상 |
+| S-05 | `*Writer` 가 애그리거트의 상태 변경 메서드를 호출한 뒤 `repository.save()` 없이 반환 | `*Reader` 는 대상 아님 |
+| S-06 | `@Transactional` usecase 메서드 안의 client(외부 I/O) 호출. `TransactionTemplate` 을 쓰는 메서드에서 람다 밖에서 Writer 를 둘 이상 엮음. 트랜잭션을 나눴는데 앞 구간이 남긴 상태로 실패를 정리·대사할 수 없음 | 트랜잭션 밖에서 외부 호출 실패를 잡아 단일 Writer 로 실패 상태를 남기는 것은 정상 (`PaymentUseCase.pay`) |
+| S-07 | `@Transactional` usecase 메서드나 `TransactionTemplate` 람다 안에서 도메인 서비스 호출을 try-catch 로 감싸고 예외를 삼킨 채 계속 진행 | 트랜잭션 밖의 catch, 잡아서 다른 예외로 다시 던지는 것은 정상 |
+| S-08 | `*Repository`/client 클래스 안의 도메인 상태 분기, 계산 | null 처리와 타입 변환, 없는 행에 대한 NOT_FOUND 예외는 허용 |
 
 ## 차단 범위
 
-- 차단(머지 불가): S-04, S-06. 도메인끼리 얽히게 만드는 규칙이고 오탐이 거의 없다.
-- 권고(코멘트만): 나머지. S-05 는 일관성 요구라는 비즈니스 판단이 들어가므로 권고로 둔다. 골든 세트에서 정밀도가 90% 를 넘으면 차단으로 올린다.
+- 차단(머지 불가): S-05, S-07. 저장 누락은 데이터가 조용히 사라지고, 트랜잭션 안에서 삼킨 예외는 커밋 시점에 엉뚱한 실패를 낸다. 둘 다 오탐이 거의 없다.
+- 권고(코멘트만): 나머지. S-06 은 트랜잭션을 어디서 나눌지라는 설계 판단이 들어가므로 권고로 둔다. 골든 세트에서 정밀도가 90% 를 넘으면 차단으로 올린다.
 
 오탐이 차단하기 시작하면 팀은 에이전트를 무시하는 법을 배운다. 차단 범위는 측정 결과로만 넓힌다.
 
@@ -152,8 +149,8 @@ review/
 프롬프트를 바꿀 때마다 재현율과 정밀도를 재기 위한 고정 입력. `review/golden/cases/<이름>/` 에 `diff.patch` 와 `expected.txt` 를 두고
 `review/eval.sh` 로 돌린다. 모델과 토큰은 `.env` 에서 읽힌다. 만드는 법은 [review/golden/README.md](../review/golden/README.md).
 
-현재 케이스 여덟 개: S-01, S-05, S-06, S-07, S-09, S-10, S-11 위반 각 1개와 위반처럼 보이지만 아닌 입력 검증 1개.
-S-05 는 핵심 흐름(결제 → 주문 PAID)을 커밋 이후로 받는 경우, S-07 은 커밋 이후 리스너가 새 트랜잭션을 열지 않는 경우다.
+현재 케이스 일곱 개: S-01, S-04, S-05, S-06, S-07 위반 각 1개와 위반처럼 보이지 않는 경우 2개(입력 검증, 트랜잭션 밖의 외부 호출 실패 처리).
+S-06 은 `@Transactional` usecase 안에서 PG 를 호출하는 경우, S-07 은 바깥 트랜잭션 안에서 도메인 서비스의 예외를 삼키는 경우다.
 실제 PR 에서 에이전트가 놓치거나 오탐한 사례를 케이스로 추가한다. 측정은 규칙별 재현율·정밀도이며, 차단 규칙은 정밀도 우선, 권고 규칙은 재현율 우선.
 
 ## 운영

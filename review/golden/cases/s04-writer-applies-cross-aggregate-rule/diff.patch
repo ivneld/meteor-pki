@@ -1,0 +1,24 @@
+diff --git a/a/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java b/b/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java
+index b4effb2..621f5f8 100644
+--- a/a/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java
++++ b/b/core/core-api/src/main/java/com/meteor/domain/OrderWriter.java
+@@ -1,5 +1,6 @@
+ package com.meteor.domain;
+ 
++import com.meteor.enums.OrderStatus;
+ import com.meteor.support.error.CoreException;
+ import com.meteor.support.error.ErrorCode;
+ 
+@@ -25,8 +26,10 @@ public class OrderWriter {
+ 
+     /** 건수라는 사실은 여기서 꺼내고, 한도 판단은 {@link OrderLimitPolicy} 가 한다(S-04). */
+     public Order place(Long memberId, String productName, int quantity, Money unitPrice, Address shippingAddress) {
+-        long awaiting = orderRepository.countByMemberIdAndStatus(memberId, OrderLimitPolicy.COUNTED_STATUS);
+-        OrderLimitPolicy.ensureCanPlace(memberId, awaiting);
++        long awaiting = orderRepository.countByMemberIdAndStatus(memberId, OrderStatus.CREATED);
++        if (awaiting >= 3) {
++            throw new CoreException(ErrorCode.ORDER_LIMIT_EXCEEDED).property("memberId", memberId);
++        }
+         return orderRepository.save(Order.place(memberId, productName, quantity, unitPrice, shippingAddress));
+     }
+ 

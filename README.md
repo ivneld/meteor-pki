@@ -1,104 +1,105 @@
 # meteor-template
 
-Spring Boot(Java) 서비스를 팀이 함께 개발하기 위한 템플릿.
+Spring Boot(Java) 애플리케이션을 팀이 함께 시작하기 위한 템플릿.
 
-목표는 두 가지다. **도메인 규칙은 애그리거트 한 곳에 모으고**, **컨텍스트 경계는 지금의 유지보수와 새 애플리케이션과의 연동을 위해
-지킨다.** 서비스 분리를 미리 대비하지 않는다. 경계를 지킨 결과로 분리 가능성이 따라올 뿐이다. 영속화는 JPA 로 고정하고 저장소 교체용
-추상화를 두지 않되, JPA 의 간섭 없이 애그리거트·값 객체를 쓰고 그것을 유스케이스 결과로 그대로 쓰기 위해 엔티티와 애그리거트는 분리한다.
-판단 기준은 [설계 원칙](docs/ARCHITECTURE.md#설계-원칙)에 있다.
+목표는 단순한 구조로 시작하되 **규칙은 도메인 모델 한 곳에 모으고**, **트랜잭션 경계가 코드에서 보이게** 하는 것이다. 코드는
+`domain`, `usecase`, `api` 세 계층으로만 나눈다. 버티컬 슬라이스나 컨텍스트 경계 장치는 두지 않는다. 영속화는 JPA 로 고정하되, JPA 의
+간섭 없이 애그리거트·값 객체를 쓰고 그것을 결과로 그대로 돌려주기 위해 엔티티와 애그리거트는 분리한다. 판단 기준은
+[설계 원칙](docs/ARCHITECTURE.md#설계-원칙)에 있다.
 
-- 배포 단위는 하나, 바운디드 컨텍스트는 여러 개. 컨텍스트(`member`, `order`, `payment`, `shipping` ...) 하나는 패키지 `com.meteor.<context>` 하나다. enum 은 `core-enum`, JPA 엔티티는 `storage`, 나머지는 `core-api` 모듈에 있다.
-- 컨텍스트 안은 `enums`(core-enum) + `domain / repository / application / api`(core-api) + `storage`(storage 모듈) 여섯 패키지. 도메인 규칙은 `domain` 에만, 트랜잭션 경계는 `application` 에만 있다.
-  애그리거트와 JPA 엔티티는 분리되어 있고 `repository` 의 `*Repository` 어댑터가 변환한다. storage 모듈은 도메인을 모른다.
-- 컨텍스트끼리는 ID 와 `*Facade`(판단 결과 반환), `*Event` 로만 협력한다. 이 경계들은 ArchUnit 테스트와 리뷰 에이전트가 강제한다.
+- 규칙은 애그리거트와 `*Policy`(도메인 모델)에 있다. 도메인 모델은 Spring 과 JPA 를 모른다.
+- 저장소 호출은 애그리거트 하나를 맡는 도메인 서비스 `*Reader`(조회)와 `*Writer`(생성·변경)에 모은다. `*Service` 접미어는 쓰지 않는다.
+- 여러 도메인 서비스를 엮거나 외부 시스템을 부르거나 트랜잭션을 나눠야 할 때만 `*UseCase` 를 만든다. 애그리거트 하나로 끝나는 흐름은
+  api 가 도메인 서비스를 바로 부른다.
+- 트랜잭션은 도메인 서비스(기본 전파)와 usecase 에서 선언한다. 경계 조절은 usecase 만 한다. 이 규칙들은 ArchUnit 테스트와 리뷰 에이전트가 강제한다.
 
 ## 모듈 구성
 
 ```
 meteor-template
 ├── core
-│   ├── core-enum       컨텍스트마다 enums 패키지(도메인 enum). 의존 0
-│   └── core-api        유일한 실행 모듈. 컨텍스트마다 domain / repository / application / api 패키지
-│                       + shared(컨텍스트 간 계약 값) + support(에러 어휘, 웹 설정, 어드바이스)
+│   ├── core-enum       com.meteor.enums. 모든 도메인 enum. 의존 0
+│   └── core-api        유일한 실행 모듈. com.meteor.domain / usecase / api
+│                       + support(에러 어휘, 웹 설정, 어드바이스)
 ├── storage
-│   └── db-core         컨텍스트마다 storage 패키지(JPA 엔티티, Spring Data 인터페이스) + 저장소 인프라(DataSource, JPA 설정, BaseEntity).
+│   └── db-core         com.meteor.storage(JPA 엔티티, Spring Data 인터페이스) + 저장소 인프라(DataSource, JPA 설정, BaseEntity).
 │                       core-enum 만 의존하고 도메인을 모른다
 ├── clients
-│   └── client-example  OpenFeign 기반 외부 연동 어댑터 예시
+│   └── client-pg       OpenFeign 기반 PG 연동 어댑터 예시. local 프로필은 PG 없이 승인한다
 ├── support
 │   ├── logging         프로필별 logback, OpenTelemetry, Sentry
 │   └── monitoring      Actuator + Prometheus
 ├── tests
 │   └── api-docs        Spring REST Docs 테스트 베이스
 └── docs
-    ├── ARCHITECTURE.md   규칙, 계층, 컨텍스트 식별
+    ├── ARCHITECTURE.md   규칙, 계층, 도메인 서비스, 트랜잭션
     ├── ERROR_HANDLING.md 에러 코드와 ProblemDetail
     ├── SCALING.md        구조를 키우는 시점과 순서
     └── REVIEW_AGENT.md   리뷰 에이전트 하네스
 ```
 
-### 컨텍스트 하나의 모양
+### 계층
 
 ```
-com.meteor.order
-├── enums         OrderStatus                                                                       (core-enum)
-├── domain        Order(애그리거트), OrderLimitPolicy                     ← 규칙은 여기에만        (core-api)
-├── repository    OrderRepository: storage 의 엔티티를 애그리거트로, 애그리거트를 엔티티로 바꾸는 어댑터  (core-api)
-├── application   OrderUseCase(애그리거트를 그대로 반환. 필요하면 *Result/*View), OrderFacade,
-│                 OrderPaidEvent, OrderEventListener                                              (core-api)
-├── api           OrderController, request/, response/                                             (core-api)
-└── storage       OrderEntity, OrderJpaRepository. 도메인을 모르며 enum 컬럼으로 저장               (storage/db-core)
+com.meteor
+├── enums       MemberStatus, OrderStatus, PaymentMethod, PaymentStatus                         (core-enum)
+├── domain      Member, Order, Payment                       애그리거트          ← 규칙은 여기에만
+│               Money, Address, Email                        값 객체(record)
+│               OrderLimitPolicy                             여러 애그리거트에 걸친 순수 규칙
+│               MemberReader, OrderReader, PaymentReader     조회 도메인 서비스 (readOnly 트랜잭션)
+│               MemberWriter, OrderWriter, PaymentWriter     생성·변경 도메인 서비스 (트랜잭션)
+│               MemberRepository, OrderRepository, ...       엔티티 ↔ 애그리거트 변환 어댑터
+├── usecase     OrderUseCase, PaymentUseCase, *Command       여러 도메인 서비스를 엮는 흐름, 트랜잭션 경계 조절
+├── api         *Controller, request/, response/
+└── storage     *Entity, *JpaRepository. 도메인을 모르며 enum 컬럼으로 저장                      (storage/db-core)
 ```
 
 ```
-        api ──► application ──► domain ◄── repository ──► storage
-         │           │            │             │            │
-         └───────────┴────────────┴─────────────┴────────────┴──► enums (core-enum)
-                     └────────────┴─────────────┴──► shared, support.error
+ api ──────────► usecase ──────────► domain ──────► storage
+  │                 │                  ▲  (*Repository 만)
+  │                 └──► clients       │
+  └────────────────────────────────────┘
+     (애그리거트 하나로 끝나는 흐름은 api 가 *Reader / *Writer 를 바로 부른다)
 ```
 
-`domain` 은 Spring 과 JPA 를 모른다. `repository` 의 `*Repository` 는 storage 모듈의 Spring Data 인터페이스를 감싸 엔티티를 애그리거트로
-바꿔 돌려준다. 영속화 기술은 JPA 로 고정이라 그 위에 별도 인터페이스를 두지 않는다. 모듈 의존은 `core-api → storage/db-core → core-enum`
-한 방향이고 storage 는 도메인을 모른다. enum 은 core-enum 에 있어 storage 와 core-api 가 같은 타입을 쓰므로 엔티티는 enum 컬럼으로
-저장한다. 계층 사이의 나머지 경계는 ArchUnit(R-01 ~ R-11)이 강제한다. 배치·어드민 같은 두 번째 실행 모듈이 생기면 그때 `domain`·`repository`·`shared`·`support.error` 를 모듈로 추출한다([SCALING.md](docs/SCALING.md)).
+`*Repository` 는 storage 모듈의 Spring Data 인터페이스를 감싸 엔티티를 애그리거트로 바꿔 돌려준다. 영속화 기술은 JPA 로 고정이라 그 위에
+별도 인터페이스를 두지 않는다. 모듈 의존은 `core-api → storage/db-core → core-enum` 한 방향이고 storage 는 도메인을 모른다. 계층 사이의
+나머지 경계는 ArchUnit(R-01 ~ R-13)이 강제한다. 배치 같은 두 번째 실행 모듈이 생기면 그때 `domain` 과 `support.error` 를 core-domain
+모듈로 추출한다([SCALING.md](docs/SCALING.md)).
 
 ## 레퍼런스 도메인
 
-구조를 보여주기 위한 최소한의 이커머스 흐름. 네 컨텍스트가 `*Facade`(판단을 돌려주는 동기 질의)와 `*Event` 로만 협력한다.
-이벤트는 일관성 요구에 따라 두 가지로 받는다.
+구조를 보여주기 위한 최소한의 주문·결제 흐름. 세 가지 호출 모양이 모두 들어 있다.
+
+| 흐름 | 호출 | 트랜잭션 |
+|---|---|---|
+| 회원 가입·조회·탈퇴, 주문 조회·취소, 결제 조회 | api → `*Reader` / `*Writer` | 도메인 서비스가 연 트랜잭션 하나 |
+| 주문 생성 | api → `OrderUseCase.place` → `MemberReader.ensureActive` + `OrderWriter.place` | usecase 의 `@Transactional` 하나에 두 서비스가 참여 |
+| 결제 | api → `PaymentUseCase.pay` → `OrderReader`, `PaymentWriter`, `PgClient`, `OrderWriter` | `TransactionTemplate` 으로 둘로 나눔. PG 호출은 트랜잭션 밖 |
 
 ```
- member ◄──MemberFacade.ensureActive──── order ◄──OrderFacade.payableAmount──── payment
-                                           │ ▲                                     │
-                                           │ └── PaymentCompletedEvent ◄───────────┘
-                                           │     (같은 트랜잭션: 결제와 주문 PAID 는 함께 커밋·롤백)
-                                           │
-                                           └──── OrderPaidEvent ────► shipping
-                                                 (커밋 이후: 배송 준비는 확정 뒤의 부가 처리)
+PaymentUseCase.pay
+  트랜잭션 1   OrderReader.payableAmount → PaymentWriter.request         결제 REQUESTED
+  트랜잭션 밖  PgClient.approve                                          실패 시 PaymentWriter.fail → FAILED
+  트랜잭션 2   PaymentWriter.approve + OrderWriter.markPaid              결제 APPROVED, 주문 PAID (함께 커밋·롤백)
 ```
 
-| 컨텍스트 | 애그리거트 | 규칙 | 다른 컨텍스트와의 접점 |
-|---|---|---|---|
-| `member` | `Member` | 탈퇴는 한 번만, 활성 회원만 다른 컨텍스트의 행위 주체가 됨 | `MemberFacade.ensureActive()` 를 공개 |
-| `order` | `Order` | 수량 1 이상, CREATED 일 때만 결제·취소 가능. 회원당 결제 대기 주문은 3건까지(`OrderLimitPolicy`) | 회원을 `MemberFacade` 로 확인, `OrderFacade.payableAmount()` 공개, 결제 완료 이벤트를 결제 트랜잭션 안에서 받아 PAID, `OrderPaidEvent` 발행 |
-| `payment` | `Payment` | 승인 금액은 0 보다 커야 함 | 금액을 `OrderFacade` 에 묻고 `PaymentCompletedEvent` 발행 |
-| `shipping` | `Shipping` | READY → SHIPPED → DELIVERED | `OrderPaidEvent` 를 커밋 이후에 받아 배송 생성 |
-| `query` | 없음 (읽기 전용) | 없음 | 네 컨텍스트의 테이블을 SQL 로만 JOIN 해 `OrderDetailView` 를 돌려줌. 다른 컨텍스트의 클래스는 참조하지 않음 |
+| 애그리거트 | 규칙 |
+|---|---|
+| `Member` | 탈퇴는 한 번만. 활성 회원만 주문할 수 있음 |
+| `Order` | 수량 1 이상, CREATED 일 때만 결제·취소 가능. 회원당 결제 대기 주문은 3건까지(`OrderLimitPolicy`) |
+| `Payment` | 금액은 0 보다 커야 함. REQUESTED 일 때만 승인·실패 처리 가능 |
 
-유스케이스의 반환 타입 세 가지도 레퍼런스에 있다. 조회·상태 전이는 애그리거트 그대로(`OrderUseCase.find`), 애그리거트와 계산 결과를
-함께 돌려줄 때는 전용 모델(`OrderUseCase.place` → `OrderPlacementResult`), 식별자만 필요하면 원시 타입(`MemberUseCase.register` → `Long`).
-
-값 타입은 소유자가 정한다. 컨텍스트 사이 계약에 실리는 `Money`, `Address` 만 `shared` 에 있고, `Email` 같은 record 는 각 컨텍스트의
-`domain` 에, `PaymentMethod` 와 상태 enum 은 각 컨텍스트의 `enums`(core-enum)에 있다. 각 컨텍스트는 다른 컨텍스트를 ID(`memberId`, `orderId`)로만 안다.
-전체 흐름은 `OrderFlowTest`, 결제와 주문의 원자성은 `PaymentOrderAtomicityTest` 가 검증한다.
+애그리거트끼리는 ID(`memberId`, `orderId`)로만 참조한다. 주문 생성은 `OrderUseCaseIT`, 결제 흐름은 `PaymentUseCaseIT`, 나눈 트랜잭션의
+경계(PG 실패 시 FAILED, 승인 뒤 실패 시 REQUESTED 유지)는 `PaymentTransactionBoundaryIT` 가 검증한다.
 
 ## 핵심 규칙
 
-- `domain` 은 Spring, JPA, 다른 계층을 모른다. 여러 애그리거트에 걸친 규칙은 `*Policy` 에 둔다.
-- 서비스는 두 종류뿐이다. 트랜잭션과 흐름을 맡는 `*UseCase`(application), 규칙을 맡는 `*Policy`(domain). api 는 UseCase 만 의존하고 응답 DTO 에는 enum 외 도메인 타입을 두지 않는다.
-- `@Transactional` 은 `application` 에만 있다.
-- 컨텍스트끼리 직접 의존하지 않는다. `*Facade` 와 `*Event` 로만. Facade 는 모델이 아니라 판단 결과를 돌려준다.
-- 함께 바뀌어야 하는 컨텍스트 간 처리는 같은 트랜잭션으로, 확정 뒤의 부가 처리만 커밋 이후로 받는다.
+- 도메인 모델(애그리거트, 값 객체, `*Policy`)은 Spring, JPA, 저장소를 모른다.
+- 도메인 서비스는 `*Reader`, `*Writer` 뿐이고 자기 애그리거트의 `*Repository` 만 쓴다. 다른 도메인 서비스와 외부 시스템을 부르지 않는다.
+- `@Transactional` 은 usecase 와 도메인 서비스에만 있다. 도메인 서비스는 기본 전파만 쓰고, 경계 조절(`TransactionTemplate`, `REQUIRES_NEW`)은 usecase 만 한다.
+- 도메인 서비스를 둘 이상 부르고 그중 Writer 가 있는 usecase 메서드는 바깥 트랜잭션을 연다.
+- 엔드포인트 하나는 usecase·도메인 서비스 메서드 하나만 부른다. 응답 DTO 에는 도메인 타입을 두지 않는다.
 
 전체 규칙과 이유는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). 구조 규칙은 `./gradlew test` 의 `ArchitectureRules` 가 검사한다.
 
@@ -109,11 +110,9 @@ com.meteor.order
 H='Content-Type: application/json'
 curl -X POST localhost:8080/api/v1/members  -H "$H" -d '{"email":"kim@example.com","name":"kim"}'
 curl -X POST localhost:8080/api/v1/orders   -H "$H" -d '{"memberId":1,"productName":"keyboard","quantity":2,"unitPrice":50000,"shippingAddress":{"city":"Seoul","street":"Teheran-ro 1","zipCode":"06000"}}'
-curl -X POST localhost:8080/api/v1/payments -H "$H" -d '{"orderId":1,"method":"CARD"}'
-curl localhost:8080/api/v1/orders/1                 # status: PAID (이벤트로 전이)
-curl 'localhost:8080/api/v1/shippings?orderId=1'    # status: READY (이벤트로 생성)
-curl -X POST localhost:8080/api/v1/shippings/1/ship
-curl localhost:8080/api/v1/query/orders/1                # 네 컨텍스트를 묶은 읽기 모델
+curl -X POST localhost:8080/api/v1/payments -H "$H" -d '{"orderId":1,"method":"CARD"}'   # local 프로필은 PG 없이 승인
+curl localhost:8080/api/v1/orders/1                 # status: PAID
+curl localhost:8080/api/v1/payments/1               # status: APPROVED
 ```
 
 ```bash
@@ -157,7 +156,7 @@ BLOCK 이면 고치거나 ADR 로 예외를 남긴 뒤 리뷰를 요청한다. �
 | 태스크 | 포함 태그 | 설명 |
 |---|---|---|
 | `test` | develop, restdocs 제외 | CI 에서 실행하는 기본 묶음. ArchUnit 규칙 포함 |
-| `unitTest` | 태그 없음 | 외부 의존 없는 빠른 단위 테스트 (도메인, ArchUnit) |
+| `unitTest` | 태그 없음 | 외부 의존 없는 빠른 단위 테스트 (도메인 모델, ArchUnit) |
 | `contextTest` | `context` | Spring 컨텍스트를 올리는 통합 테스트 |
 | `restDocsTest` | `restdocs` | REST Docs 스니펫 생성 |
 | `developTest` | `develop` | CI 에서 돌리지 않는 개발용 테스트 |
@@ -171,7 +170,7 @@ BLOCK 이면 고치거나 ADR 로 예외를 남긴 뒤 리뷰를 요청한다. �
 
 | 문서 | 언제 보는가 |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 설계 원칙, 코드를 어디에 둘지, 규칙을 어겨야 할 때, 새 컨텍스트를 만들 때, 경계가 맞는지 점검할 때 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 설계 원칙, 코드를 어디에 둘지, usecase 가 필요한지, 트랜잭션을 묶거나 나눌 때, 규칙을 어겨야 할 때, 새 기능을 추가할 때 |
 | [docs/ERROR_HANDLING.md](docs/ERROR_HANDLING.md) | 에러 코드를 추가하거나 예외를 던질 때, 오류 응답 형식을 알아야 할 때 |
-| [docs/SCALING.md](docs/SCALING.md) | 트래픽·조직이 커져 구조를 바꿔야 하는지, 새 기능을 별도 애플리케이션으로 만들지, 다른 앱과 연동할 때 |
+| [docs/SCALING.md](docs/SCALING.md) | 트래픽·코드가 커져 구조를 바꿔야 하는지, 배치 같은 두 번째 실행 모듈을 만들 때, 다른 앱과 연동할 때 |
 | [docs/REVIEW_AGENT.md](docs/REVIEW_AGENT.md) | 코드리뷰 요청 전 `/arch-review` 를 돌릴 때, 결과를 해석할 때, 프롬프트를 바꿀 때 |

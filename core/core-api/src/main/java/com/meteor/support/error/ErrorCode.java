@@ -9,8 +9,7 @@ package com.meteor.support.error;
  * 바꾸는 일과 프레임워크 오류를 공통 코드에 대응시키는 일은 표현 계층(core-api 의 ProblemDetails)이 맡는다.
  *
  * <p>
- * 코드 문자열은 접두어로 컨텍스트를 구분한다. {@code C} 공통, {@code M} 회원, {@code O} 주문, {@code P} 결제,
- * {@code S} 배송.
+ * 코드 문자열은 접두어로 도메인을 구분한다. {@code C} 공통, {@code M} 회원, {@code O} 주문, {@code P} 결제.
  */
 public enum ErrorCode {
 
@@ -34,10 +33,8 @@ public enum ErrorCode {
 
     // ----- 결제 (P) -----
     PAYMENT_NOT_FOUND("P001", 404, "Payment not found.", LogLevel.INFO),
-
-    // ----- 배송 (S) -----
-    SHIPPING_NOT_FOUND("S001", 404, "Shipping not found.", LogLevel.INFO),
-    SHIPPING_INVALID_TRANSITION("S002", 409, "Shipping status transition is not allowed.", LogLevel.INFO);
+    PAYMENT_NOT_REQUESTED("P002", 409, "Payment is not awaiting approval.", LogLevel.INFO),
+    PAYMENT_FAILED("P003", 502, "Payment gateway did not approve the payment.", LogLevel.WARN);
 
     private final String code;
 

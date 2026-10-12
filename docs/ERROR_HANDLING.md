@@ -30,13 +30,13 @@ Content-Type: application/problem+json
 ## 구조
 
 에러 코드는 어휘이고 ProblemDetail 은 표현이다. 둘 다 core-api 모듈에 있지만 패키지가 다르다. 어휘(`support.error`)는 예외를 던지는
-가장 안쪽 계층인 domain 이 쓰므로 프레임워크를 모르고(R-01), 표현(`support.web`)은 Spring MVC 에 의존한다. 에러 어휘는 다른 모듈이
-쓸 일이 없으므로 core-enum 에 두지 않는다. `shared` 에도 두지 않는다. 그 패키지는 record 와 enum 만 담고, `CoreException` 은 둘 다 아니기 때문이다.
+가장 안쪽 계층인 도메인 모델이 쓰므로 프레임워크를 모르고(R-01), 표현(`support.web`)은 Spring MVC 에 의존한다. 에러 어휘는 다른 모듈이
+쓸 일이 없으므로 core-enum 에 두지 않는다. domain 을 core-domain 모듈로 추출할 때 함께 옮긴다.
 
 ```
-support.error  (프레임워크를 모른다. domain 이 던진다)
+support.error  (프레임워크를 모른다. 도메인 모델이 던진다)
   ErrorCode (enum)         코드 문자열 + HTTP 상태(int) + 제목 + 로그 레벨
-  CoreException            domain, application, repository, clients 어디서든 던질 수 있는 유일한 예외. errorCode + detail(선택) + properties
+  CoreException            domain, usecase 어디서든 던질 수 있는 유일한 예외. errorCode + detail(선택) + properties
   LogLevel                 로깅 프레임워크에 의존하지 않기 위한 자체 enum
 
 support.web    (Spring MVC 표현 계층)
@@ -46,31 +46,30 @@ support.web    (Spring MVC 표현 계층)
                            검증 실패는 errors[{field, message}] 추가, 나머지는 INTERNAL_ERROR
 ```
 
-핵심 규칙은 하나다. **어떤 HTTP 상태로 응답할지는 예외를 던지는 쪽이 아니라 에러 코드가 결정한다.** 도메인, UseCase, `*Repository`·클라이언트 어디서
+핵심 규칙은 하나다. **어떤 HTTP 상태로 응답할지는 예외를 던지는 쪽이 아니라 에러 코드가 결정한다.** 애그리거트, 도메인 서비스, usecase 어디서
 던져도 같은 코드는 같은 상태·같은 제목으로 나간다.
 
 ## 에러 코드 목록
 
-코드 문자열은 접두어로 컨텍스트를 구분한다. 접두어 뒤 숫자는 컨텍스트 안에서 순번이다.
+코드 문자열은 접두어로 도메인을 구분한다. 접두어 뒤 숫자는 도메인 안에서 순번이다.
 
 | 접두어 | 영역 | 예 |
 |---|---|---|
-| `C` | 공통. 특정 컨텍스트에 속하지 않는 오류, Spring MVC 표준 오류, VO 검증 실패 | `C001` 400, `C002` 404, `C003` 405, `C004` 415, `C999` 500 |
+| `C` | 공통. 특정 도메인에 속하지 않는 오류, Spring MVC 표준 오류, VO 검증 실패 | `C001` 400, `C002` 404, `C003` 405, `C004` 415, `C999` 500 |
 | `M` | 회원 | `M001` 없음 (404), `M002` 이미 탈퇴 (409), `M003` 비활성 (409) |
 | `O` | 주문 | `O001` 없음 (404), `O002` 결제 불가 상태 (409), `O003` 취소 불가 상태 (409), `O004` 결제 대기 주문 한도 초과 (409) |
-| `P` | 결제 | `P001` 없음 (404) |
-| `S` | 배송 | `S001` 없음 (404), `S002` 허용되지 않는 상태 전이 (409) |
+| `P` | 결제 | `P001` 없음 (404), `P002` 승인 대기 상태 아님 (409), `P003` PG 미승인 (502) |
 
 `C999` 는 처리되지 않은 모든 예외의 기본값이다. 공통 코드는 `ProblemDetails.fromStatus()` 가 참조하므로 삭제하거나 상태를 바꿀 때 함께 확인한다.
 
 ## 신규 에러 코드 추가하기
 
-1. **컨텍스트 접두어 정하기.** 기존 접두어가 있으면 다음 번호를, 새 컨텍스트면 새 접두어를 쓴다. 접두어를 추가하면 `ErrorCode` 의
+1. **도메인 접두어 정하기.** 기존 접두어가 있으면 다음 번호를, 새 도메인이면 새 접두어를 쓴다. 접두어를 추가하면 `ErrorCode` 의
    클래스 주석과 이 문서의 표에도 적는다.
-2. **`ErrorCode` 에 항목 추가.** 컨텍스트별 구분 주석 아래에 넣는다.
+2. **`ErrorCode` 에 항목 추가.** 도메인별 구분 주석 아래에 넣는다.
 
    ```java
-   // ----- 주문 컨텍스트 (O) -----
+   // ----- 주문 (O) -----
    ORDER_NOT_FOUND("O001", 404, "Order not found.", LogLevel.INFO),
    ORDER_ALREADY_PAID("O002", 409, "Order has already been paid.", LogLevel.WARN),
    ORDER_PAYMENT_FAILED("O003", 502, "Payment provider rejected the request.", LogLevel.ERROR);
@@ -90,7 +89,7 @@ support.web    (Spring MVC 표현 계층)
 `*Policy` 가 던진다(`OrderLimitPolicy` → `O004`).
 
 ```java
-// Order (order.domain)
+// Order (domain)
 public void cancel() {
     if (status != OrderStatus.CREATED) {
         throw new CoreException(ErrorCode.ORDER_NOT_CANCELLABLE).property("orderId", id).property("orderStatus", status);
@@ -99,11 +98,11 @@ public void cancel() {
 }
 ```
 
-**없는 리소스는 UseCase 가 던진다.** 조회 결과가 없는 것은 도메인 규칙이 아니라 흐름의 문제다.
+**없는 리소스는 도메인 서비스가 던진다.** 조회 결과가 없는 것은 도메인 규칙이 아니라 흐름의 문제라 애그리거트가 아니라 `*Reader`/`*Writer` 가 던진다.
 
 ```java
-// OrderUseCase (order.application)
-Order order = orderRepository.findById(orderId)
+// OrderReader (domain)
+return orderRepository.findById(orderId)
     .orElseThrow(() -> new CoreException(ErrorCode.ORDER_NOT_FOUND).property("orderId", orderId));
 ```
 
@@ -117,13 +116,14 @@ throw new CoreException(ErrorCode.ORDER_ALREADY_PAID, "paidAt=" + order.getPaidA
 (`type`, `title`, `status`, `detail`, `instance`)은 `CoreException.property()` 가 거부한다. 주문 상태를 싣고 싶으면 `status` 가 아니라
 `orderStatus` 처럼 쓴다.
 
-**값 검증 실패는 VO 가 던진다.** VO(`shared` 와 각 컨텍스트 domain 의 record)는 외부 의존이 없어 `IllegalArgumentException` 을 던지고, 어드바이스가 `C001` 과
-메시지로 응답한다. 요청 DTO 가 Command 로 바뀌는 시점에 `Email.of(...)` 가 실패하면 UseCase 에 들어가기 전에 400 이 나간다.
+**값 검증 실패는 VO 가 던진다.** VO(domain 의 record)는 외부 의존이 없어 `IllegalArgumentException` 을 던지고, 어드바이스가 `C001` 과
+메시지로 응답한다. 요청 DTO 가 Command 나 도메인 서비스 인자로 바뀌는 시점에 `Email.of(...)` 가 실패하면 usecase·도메인 서비스에 들어가기 전에 400 이 나간다.
 
-**외부 연동 실패는 어댑터가 감싼다.** `clients` 어댑터가 Feign 예외를 받아 에러 코드로 바꾼다. 원인 예외는 로그에 남기고 응답에는 노출하지 않는다.
+**외부 연동 실패는 usecase 가 에러 코드로 바꾼다.** client 모듈은 core-api 의 에러 어휘를 모르므로 Feign 예외를 자기 예외(`PgApprovalException`)로
+감싸 던지고, 호출한 usecase 가 받아 에러 코드로 바꾼다(`PaymentUseCase` → `P003`). 원인 예외는 cause 로 남겨 로그에 기록하고 응답에는 노출하지 않는다.
 
-**컨트롤러는 아무것도 하지 않는다.** `try/catch` 없이 UseCase 를 호출하고 DTO 를 반환한다. 예외는 `ApiControllerAdvice` 가 받는다.
+**컨트롤러는 아무것도 하지 않는다.** `try/catch` 없이 usecase 나 도메인 서비스를 호출하고 DTO 를 반환한다. 예외는 `ApiControllerAdvice` 가 받는다.
 
 **비동기 메서드도 같다.** `@Async` 안에서 던진 `CoreException` 은 `AsyncExceptionHandler` 가 같은 로그 레벨로 기록한다.
 
-**클라이언트는 `status` 가 아니라 `code` 로 분기한다.** 같은 404 라도 `C002`(경로 없음)와 `S001`(샘플 없음)은 다른 상황이다.
+**클라이언트는 `status` 가 아니라 `code` 로 분기한다.** 같은 404 라도 `C002`(경로 없음)와 `O001`(주문 없음)은 다른 상황이다.

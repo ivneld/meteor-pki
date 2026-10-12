@@ -1,5 +1,5 @@
-// 프로젝트에서 유일하게 실행 가능한 모듈. 컨텍스트마다 domain / repository / application / api 패키지가 이 안에 있다.
-// JPA 엔티티와 Spring Data 는 storage/db-core 에 있고, repository 어댑터가 그것을 이 모듈의 애그리거트로 바꾼다.
+// 프로젝트에서 유일하게 실행 가능한 모듈. domain / usecase / api 세 계층 패키지가 이 안에 있다.
+// JPA 엔티티와 Spring Data 는 storage/db-core 에 있고, domain 의 *Repository 어댑터가 그것을 애그리거트로 바꾼다.
 // 계층 사이의 경계는 ArchitectureRules(ArchUnit)가 강제한다.
 bootJar.enabled = true
 jar.enabled = false
@@ -7,7 +7,7 @@ jar.enabled = false
 dependencies {
     implementation project(':core:core-enum')
     implementation project(':storage:db-core')
-    implementation project(':clients:client-example')
+    implementation project(':clients:client-pg')
     implementation project(':support:logging')
     implementation project(':support:monitoring')
 

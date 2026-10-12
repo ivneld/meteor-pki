@@ -1,0 +1,26 @@
+diff --git a/a/core/core-api/src/main/java/com/meteor/usecase/OrderUseCase.java b/b/core/core-api/src/main/java/com/meteor/usecase/OrderUseCase.java
+index e9acbfc..5cac61c 100644
+--- a/a/core/core-api/src/main/java/com/meteor/usecase/OrderUseCase.java
++++ b/b/core/core-api/src/main/java/com/meteor/usecase/OrderUseCase.java
+@@ -3,6 +3,7 @@ package com.meteor.usecase;
+ import com.meteor.domain.MemberReader;
+ import com.meteor.domain.Order;
+ import com.meteor.domain.OrderWriter;
++import com.meteor.support.error.CoreException;
+ 
+ import org.springframework.stereotype.Service;
+ import org.springframework.transaction.annotation.Transactional;
+@@ -29,7 +30,12 @@ public class OrderUseCase {
+      */
+     @Transactional
+     public Order place(OrderPlaceCommand command) {
+-        memberReader.ensureActive(command.memberId());
++        try {
++            memberReader.ensureActive(command.memberId());
++        }
++        catch (CoreException ex) {
++            // 회원 확인이 실패해도 주문은 받는다
++        }
+         return orderWriter.place(command.memberId(), command.productName(), command.quantity(), command.unitPrice(),
+                 command.shippingAddress());
+     }

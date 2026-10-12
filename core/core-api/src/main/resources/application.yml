@@ -7,7 +7,7 @@ spring:
       - logging.yml
       - monitoring.yml
       - db-core.yml
-      - client-example.yml
+      - client-pg.yml
   web.resources.add-mappings: false
 
 server:

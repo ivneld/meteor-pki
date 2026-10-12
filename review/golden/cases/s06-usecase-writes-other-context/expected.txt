@@ -1,1 +1,0 @@
-S-06 결제 UseCase 가 주문 Repository 로 주문 테이블을 직접 쓴다 (R-07 도 ArchUnit 에서 실패)

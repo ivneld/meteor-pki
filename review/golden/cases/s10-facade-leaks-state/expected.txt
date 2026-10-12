@@ -1,1 +1,0 @@
-S-10 OrderFacade 가 상태 이름을 내주고 결제 UseCase 가 그 값으로 분기한다. 판단은 payableAmount() 가 이미 한다
