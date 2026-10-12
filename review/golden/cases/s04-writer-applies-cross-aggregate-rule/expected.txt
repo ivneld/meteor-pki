@@ -1,1 +1,0 @@
-S-04 OrderWriter 가 결제 대기 주문 건수를 직접 비교한다. 한도 규칙은 OrderLimitPolicy 에 있다

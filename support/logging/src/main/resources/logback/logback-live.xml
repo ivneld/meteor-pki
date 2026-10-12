@@ -19,7 +19,7 @@
     </appender>
 
     <logger name="org.springframework" level="WARN"/>
-    <logger name="com.meteor" level="INFO"/>
+    <logger name="io.autocrypt.vehicles.pki.x509" level="INFO"/>
 
     <root level="INFO">
         <appender-ref ref="STDOUT"/>

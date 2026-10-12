@@ -10,7 +10,7 @@
     </appender>
 
     <logger name="org.springframework" level="INFO"/>
-    <logger name="com.meteor" level="DEBUG"/>
+    <logger name="io.autocrypt.vehicles.pki.x509" level="DEBUG"/>
 
     <root level="INFO">
         <appender-ref ref="STDOUT"/>

@@ -7,17 +7,15 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'meteor-template'
+rootProject.name = 'x509-pki'
 
-// core: 도메인 enum 모듈(com.meteor.enums)과 유일한 실행 모듈. core-api 는 domain / usecase / api 세 계층
+// core: 도메인 enum 모듈(io.autocrypt.vehicles.pki.x509.enums)과 유일한 실행 모듈. core-api 는 domain / usecase / api 세 계층
 include 'core:core-enum'
 include 'core:core-api'
 
-// storage: JPA 엔티티·Spring Data 인터페이스(com.meteor.storage)와 저장소 인프라. core-enum 만 의존하고 도메인을 모른다
+// storage: JPA 엔티티·Spring Data 인터페이스(io.autocrypt.vehicles.pki.x509.storage)와 저장소 인프라. core-enum 만 의존하고 도메인을 모른다
 include 'storage:db-core'
 
-// clients: 외부 시스템 연동 어댑터
-include 'clients:client-pg'
 
 // support: 공통 부가 기능
 include 'support:logging'

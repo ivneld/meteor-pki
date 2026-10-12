@@ -1,4 +1,4 @@
-// 저장소 모듈. JPA 엔티티·Spring Data 인터페이스(com.meteor.storage)와 저장소 인프라(support.storage).
+// 저장소 모듈. JPA 엔티티·Spring Data 인터페이스(io.autocrypt.vehicles.pki.x509.storage)와 저장소 인프라(support.storage).
 // 도메인을 모른다. enum 은 core-enum 에서 가져와 @Enumerated(STRING) 컬럼으로 저장하고, 애그리거트와의 변환은 core-api 의 domain.*Repository 어댑터가 한다.
 dependencies {
     api project(':core:core-enum')

@@ -1,1 +1,0 @@
-S-07 바깥 트랜잭션 안에서 MemberReader 의 예외를 삼켜 커밋 시점에 UnexpectedRollbackException 이 난다

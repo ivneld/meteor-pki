@@ -1,4 +1,4 @@
-spring.application.name: meteor-api
+spring.application.name: x509-pki-api
 spring.profiles.active: local
 
 spring:
@@ -7,7 +7,6 @@ spring:
       - logging.yml
       - monitoring.yml
       - db-core.yml
-      - client-pg.yml
   web.resources.add-mappings: false
 
 server:

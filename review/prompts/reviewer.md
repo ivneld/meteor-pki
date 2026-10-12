@@ -31,7 +31,7 @@ result: PASS
 ```
 findings:
 - rule: S-05
-  file: core/core-api/src/main/java/com/meteor/domain/OrderWriter.java
+  file: core/core-api/src/main/java/io/autocrypt/vehicles/pki/x509/domain/OrderWriter.java
   line: 41
   verdict: violation
   evidence: |
