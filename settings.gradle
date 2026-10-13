@@ -16,6 +16,9 @@ include 'core:core-api'
 // storage: JPA 엔티티·Spring Data 인터페이스(io.autocrypt.vehicles.pki.x509.storage)와 저장소 인프라. core-enum 만 의존하고 도메인을 모른다
 include 'storage:db-core'
 
+// clients: 외부 시스템 연동 어댑터
+include 'clients:client-crypto'
+
 
 // support: 공통 부가 기능
 include 'support:logging'

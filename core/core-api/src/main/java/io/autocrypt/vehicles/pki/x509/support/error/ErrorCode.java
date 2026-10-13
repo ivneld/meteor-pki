@@ -21,7 +21,17 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED("COMMON_METHOD_NOT_ALLOWED", 405, "Method not allowed.", LogLevel.INFO),
     UNSUPPORTED_MEDIA_TYPE("COMMON_UNSUPPORTED_MEDIA_TYPE", 415, "Unsupported media type.", LogLevel.INFO),
     SYSTEM_ERROR("COMMON_SYSTEM_ERROR", 500, "Unexpected error", LogLevel.ERROR),
-    NOT_IMPLEMENTED("COMMON_NOT_IMPLEMENTED", 501, "Not implemented yet.", LogLevel.WARN);
+    NOT_IMPLEMENTED("COMMON_NOT_IMPLEMENTED", 501, "Not implemented yet.", LogLevel.WARN),
+
+    // ----- 인증서 (CERT) -----
+    CERT_INVALID_INPUT("CERT_INVALID_INPUT", 400, "Invalid input.", LogLevel.INFO),
+    CERT_RESOURCE_NOT_FOUND("CERT_RESOURCE_NOT_FOUND", 404, "Resource not found.", LogLevel.INFO),
+    CERT_OPERATION_FAILED("CERT_OPERATION_FAILED", 400, "Certificate operation failed.", LogLevel.ERROR),
+    CERT_SIGN_FAILED("CERT_SIGN_FAILED", 500, "Certificate signing failed.", LogLevel.ERROR),
+
+    // ----- 인증서 프로파일 (PROFILE) -----
+    PROFILE_INVALID_INPUT("PROFILE_INVALID_INPUT", 400, "Invalid certificate profile input.", LogLevel.INFO),
+    PROFILE_RESOURCE_NOT_FOUND("PROFILE_RESOURCE_NOT_FOUND", 404, "Certificate profile not found.", LogLevel.INFO);
 
     private final String code;
 

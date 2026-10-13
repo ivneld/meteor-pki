@@ -9,8 +9,9 @@
 
 == 개요
 
-x509-ra 의 API 계약을 옮긴 상태다. 엔드포인트 목록과 요청·응답 필드는 저장소의 `docs/X509_RA_API.md` 를 본다.
-구현 전이라 올바른 요청은 모두 `501 COMMON_NOT_IMPLEMENTED` 로 응답한다. 엔드포인트를 구현하면 REST Docs 테스트를 추가하고 이 문서에 절을 더한다.
+x509-ra 의 API 계약을 옮겼고, 인증서 프로파일·EKU, CA 체인(Root, Sub CA, 조회, 다운로드), Leaf 발급을 구현했다. 엔드포인트 목록과
+요청·응답 필드, 구현 현황은 저장소의 `docs/X509_RA_API.md`, 호출 순서 예시는 `docs/API_SCENARIOS.md` 를 본다. 구현하지 않은 엔드포인트는
+`501 COMMON_NOT_IMPLEMENTED` 로 응답한다.
 
 성공 응답은 리소스 표현이나 파일(PEM, DER, ZIP)을 그대로 내려준다.
 오류 응답은 RFC 9457 Problem Details(`application/problem+json`) 형식이며 `title` 은 항상 `PKI-ERROR`, 에러 종류는 `errorCode` 로 구분한다.
@@ -29,4 +30,10 @@ x509-ra 의 API 계약을 옮긴 상태다. 엔드포인트 목록과 요청·�
 | COMMON_UNSUPPORTED_MEDIA_TYPE | 415 | 지원하지 않는 미디어 타입
 | COMMON_SYSTEM_ERROR | 500 | 서버 내부 오류
 | COMMON_NOT_IMPLEMENTED | 501 | 아직 구현하지 않은 엔드포인트
+| CERT_INVALID_INPUT | 400 | 인증서 값이나 발급 조건이 맞지 않음 (DN, 유효기간, 키 알고리즘, CSR, 발급자 자격)
+| CERT_RESOURCE_NOT_FOUND | 404 | 발급자 CA 나 인증서 없음
+| CERT_OPERATION_FAILED | 400 | 키 생성 실패, 발급한 인증서의 서명 검증 실패
+| CERT_SIGN_FAILED | 500 | 서명 실패
+| PROFILE_INVALID_INPUT | 400 | 프로파일·EKU 값이 맞지 않음 (이름·OID 중복, 등록되지 않은 EKU, 경로 길이)
+| PROFILE_RESOURCE_NOT_FOUND | 404 | 프로파일 없음, 또는 요청한 인증서 종류의 프로파일이 아님
 |===

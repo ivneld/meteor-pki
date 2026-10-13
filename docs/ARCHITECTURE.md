@@ -5,7 +5,7 @@
 키우는 시점과 순서는 [SCALING.md](SCALING.md) 에 있다. 규칙을 바꾸려면 이 문서를 먼저 고치고 테스트와 체크리스트를 따라 고친다.
 
 > 이 문서는 [meteor-template](https://github.com/ivneld/meteor-template) 에서 가져왔다. 본문의 `Order`, `Member`, `Payment`,
-> `PgClient` 예시는 템플릿의 레퍼런스 코드를 가리키며 이 저장소에는 없다. x509 도메인을 구현하면 본보기를 그 코드로 바꾼다.
+> `PgClient` 예시는 템플릿의 레퍼런스 코드를 가리키며 이 저장소에는 없다. 이 저장소의 본보기는 [새 기능 추가](#새-기능-추가)의 x509 코드다.
 
 - `R-xx` 구조 규칙. 결정적이며 ArchUnit 이 CI 에서 차단한다.
 - `S-xx` 의미 규칙. 코드 구조만으로 판단할 수 없어 리뷰 에이전트와 사람이 본다.
@@ -72,7 +72,7 @@ core-enum       io.autocrypt.vehicles.pki.x509.enums. 모든 도메인 enum. 어
 core-api        유일한 실행 모듈. io.autocrypt.vehicles.pki.x509.domain / usecase / api + support(error, web, async)
 storage/db-core io.autocrypt.vehicles.pki.x509.storage(JPA 엔티티, Spring Data 인터페이스) + support.storage(DataSource, JPA 설정, BaseEntity).
                 도메인을 모른다. enum 은 core-enum 의 것을 @Enumerated(STRING) 컬럼으로, 값 객체는 컬럼으로 펼쳐 저장한다
-clients/*       외부 시스템 어댑터. io.autocrypt.vehicles.pki.x509.client.<이름>. 예: client-pg
+clients/*       외부 시스템 어댑터. io.autocrypt.vehicles.pki.x509.client.<이름>. 예: client-crypto(키 생성과 서명, HSM/KMS 자리)
 support/*       logging, monitoring
 ```
 
@@ -326,12 +326,12 @@ VO 는 외부 의존이 없으므로 생성자의 검증 실패는 `IllegalArgum
 `member`, `order`, `payment` 세 도메인이 레퍼런스다(meteor-template). 사람은 문서보다 옆 코드를 복사하므로, 레퍼런스가 규칙을 어기지 않게 유지하는 것이
 가장 강한 강제 수단이다.
 
-| 본보기 | 코드 |
-|---|---|
-| usecase 없이 api 가 도메인 서비스를 바로 부름 | `MemberController` → `MemberReader`, `MemberWriter` |
-| 여러 애그리거트에 걸친 규칙 | `OrderLimitPolicy` (사실은 `OrderWriter` 가 꺼냄) |
-| 여러 도메인 서비스를 한 트랜잭션으로 묶는 usecase | `OrderUseCase.place` |
-| 외부 호출을 사이에 두고 트랜잭션을 나누는 usecase | `PaymentUseCase.pay` |
+| 본보기 | 템플릿 코드 | 이 저장소 |
+|---|---|---|
+| usecase 없이 api 가 도메인 서비스를 바로 부름 | `MemberController` → `MemberReader`, `MemberWriter` | `EkuController` → `EkuReader`, `EkuWriter`, `CertQueryController` → `CertReader` |
+| 여러 애그리거트에 걸친 규칙 | `OrderLimitPolicy` (사실은 `OrderWriter` 가 꺼냄) | `CertProfileNamePolicy` (사실은 `CertProfileWriter` 가 꺼냄) |
+| 여러 도메인 서비스를 한 트랜잭션으로 묶는 usecase | `OrderUseCase.place` | `CertProfileUseCase.create` (EKU 확인 + 프로파일 저장) |
+| 외부 호출을 사이에 두고 트랜잭션을 나누는 usecase | `PaymentUseCase.pay` | `CertIssuanceUseCase` (키 생성·서명은 트랜잭션 밖, 저장만 `TransactionTemplate`) |
 
 1. core-enum 의 `io.autocrypt.vehicles.pki.x509.enums` 에 상태·종류 enum 을 둔다.
 2. `io.autocrypt.vehicles.pki.x509.domain` 에 애그리거트와 값 객체를 두고 순수 단위 테스트를 같이 쓴다. 상태 전이나 정책이 없는 기능이면 단순한 모델로 시작한다(S-02).

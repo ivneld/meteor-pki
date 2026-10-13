@@ -1,6 +1,6 @@
 package io.autocrypt.vehicles.pki.x509.support.storage;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -20,20 +20,20 @@ public abstract class BaseEntity {
     private Long id;
 
     @CreationTimestamp
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @UpdateTimestamp
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     public Long getId() {
         return id;
     }
 
-    public LocalDateTime getCreatedAt() {
+    public Instant getCreatedAt() {
         return createdAt;
     }
 
-    public LocalDateTime getUpdatedAt() {
+    public Instant getUpdatedAt() {
         return updatedAt;
     }
 

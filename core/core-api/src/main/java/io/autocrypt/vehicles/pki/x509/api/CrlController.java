@@ -20,19 +20,19 @@ public class CrlController {
      * 모든 CA 의 최신 CRL 을 {AKI}_{crlNumber}.crl 항목으로 묶은 ZIP. 파일명
      * bulk-crl-yyyyMMdd-HHmmss.zip(UTC). CRL 이 없으면 404.
      */
-    @GetMapping(value = "/api/v2/crls/bulk.zip", produces = "application/zip")
+    @GetMapping(value = "/api/crls/bulk.zip", produces = "application/zip")
     public ResponseEntity<byte[]> downloadBulkCrlZip() {
         throw new CoreException(ErrorCode.NOT_IMPLEMENTED);
     }
 
     /** 최신 CRL(DER). 파일명 {caSkiHex}.crl. */
-    @GetMapping(value = "/api/v2/crls/{caSkiHex}.crl", produces = "application/pkix-crl")
+    @GetMapping(value = "/api/crls/{caSkiHex}.crl", produces = "application/pkix-crl")
     public ResponseEntity<byte[]> downloadLatest(@PathVariable String caSkiHex) {
         throw new CoreException(ErrorCode.NOT_IMPLEMENTED);
     }
 
     /** Full CRL 을 즉시 발행하고 DER 로 돌려준다. */
-    @PostMapping(value = "/api/v2/crls/{caSkiHex}/issue", produces = "application/pkix-crl")
+    @PostMapping(value = "/api/crls/{caSkiHex}/issue", produces = "application/pkix-crl")
     public ResponseEntity<byte[]> issueAndDownload(@PathVariable String caSkiHex) {
         throw new CoreException(ErrorCode.NOT_IMPLEMENTED);
     }

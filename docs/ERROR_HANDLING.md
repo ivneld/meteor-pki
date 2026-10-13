@@ -13,7 +13,7 @@ Content-Type: application/problem+json
   "title": "PKI-ERROR",
   "status": 400,
   "detail": "validityPeriod only allows PnY, PnM, or PnD format.",
-  "instance": "/api/v2/certificates/root",
+  "instance": "/api/certificates/root",
   "errorCode": "COMMON_INVALID_INPUT",
   "timestamp": "2026-10-12T12:58:01.469217Z",
   "errors": [ { "field": "validityPeriod", "message": "validityPeriod only allows PnY, PnM, or PnD format." } ]
@@ -60,7 +60,9 @@ support.web    (Spring MVC 표현 계층)
 | 접두어 | 영역 | 현재 코드 |
 |---|---|---|
 | `COMMON` | 특정 도메인에 속하지 않는 오류, Spring MVC 표준 오류, VO 검증 실패 | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404, `METHOD_NOT_ALLOWED` 405, `UNSUPPORTED_MEDIA_TYPE` 415, `SYSTEM_ERROR` 500, `NOT_IMPLEMENTED` 501 |
-| `CERT`, `PROFILE`, `STATS` ... | x509-ra 의 도메인 에러 | 구현할 때 옮긴다 |
+| `CERT` | 인증서 발급·조회, 인증서 값(DN, 유효기간, 키, CSR) | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404, `OPERATION_FAILED` 400, `SIGN_FAILED` 500 |
+| `PROFILE` | 인증서 프로파일, EKU | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404 |
+| `STATS` ... | x509-ra 의 그 밖의 도메인 에러 | 구현할 때 옮긴다 |
 
 x509-ra 는 에러 범주로 HTTP 상태를 정한다. 옮길 때 같은 상태로 정의한다.
 
@@ -104,13 +106,13 @@ throw new CoreException(ErrorCode.RESOURCE_NOT_FOUND).property("akiHex", akiHex)
 그대로 노출되므로 민감 정보(개인키, 비밀번호, PFX 암호)는 넣지 않는다. ProblemDetail 표준 필드 이름(`type`, `title`, `status`, `detail`,
 `instance`)은 `CoreException.property()` 가 거부한다.
 
-**값 검증 실패는 VO 가 던진다.** VO 는 외부 의존이 없어 `IllegalArgumentException` 을 던지고, 어드바이스가 `COMMON_INVALID_INPUT` 과
-메시지로 응답한다.
+**값 검증 실패는 VO 가 던진다.** x509-ra 가 에러 코드를 정해 둔 값(유효기간, DN, 키 알고리즘, SAN, CSR ...)은 원본과 같은
+`CERT_INVALID_INPUT` 과 메시지로 던진다. 원본이 코드 없이 400 으로 응답하던 형식 오류(16진수, OID, 페이지 번호)는 `IllegalArgumentException`
+을 던지고, 어드바이스가 `COMMON_INVALID_INPUT` 과 메시지로 응답한다.
 
 **외부 연동 실패는 usecase 가 에러 코드로 바꾼다.** client 모듈은 core-api 의 에러 어휘를 모르므로 자기 예외로 감싸 던지고, 호출한 usecase 가
 받아 에러 코드로 바꾼다. 원인 예외는 cause 로 남겨 로그에 기록하고 응답에는 노출하지 않는다.
 
 **컨트롤러는 아무것도 하지 않는다.** `try/catch` 없이 usecase 나 도메인 서비스를 호출하고 DTO 를 반환한다. 예외는 `ApiControllerAdvice` 가 받는다.
-단, v1 폐기(`/api/certificates/{serialNumber}/revocation`)는 x509-ra 계약상 실패를 `RevocationResponseV1` 본문으로 알리므로 그 엔드포인트만 예외를 응답 본문으로 바꾼다.
 
 **클라이언트는 `status` 가 아니라 `errorCode` 로 분기한다.**

@@ -7,11 +7,14 @@
 
 | 단계 | 상태 |
 |---|---|
-| x509-ra API 계약 (경로, 메서드, 미디어 타입, 요청·응답 DTO, 검증, 오류 응답 모양) | 완료. 모든 엔드포인트가 501 로 응답 |
-| x509-ra 동작 구현 (도메인, 저장소, 보안) | 예정 |
+| x509-ra API 계약 (경로, 메서드, 미디어 타입, 요청·응답 DTO, 검증, 오류 응답 모양) | 완료 |
+| x509-ra 동작: 인증서 프로파일·EKU, CA 체인(Root, Sub CA, 조회, 다운로드), Leaf 발급(SPKI, CSR) | 완료 |
+| x509-ra 동작: 갱신·폐기, CRL, CMP, 키 합의·동기화, 통계, 보안 | 예정. 지금은 501 |
 | x509-va, x509-crypto, x509-domain, x509-support | 예정 |
 
-옮긴 계약의 전체 목록과 원본과의 차이는 [docs/X509_RA_API.md](docs/X509_RA_API.md). 계약은 `ApiContractTest` 가 지킨다.
+옮긴 계약의 전체 목록, 구현 현황, 원본과의 차이는 [docs/X509_RA_API.md](docs/X509_RA_API.md). 계약은 `ApiContractTest` 가, 구현한
+동작은 `*ApiIT` 가 지킨다. 프로파일 → Root → Sub CA → Leaf 를 차례로 호출해 보는 순서는 [docs/API_SCENARIOS.md](docs/API_SCENARIOS.md)
+와 `scripts/api-scenario.sh`.
 
 ## 모듈 구성
 
@@ -20,6 +23,8 @@ x509-pki
 ├── core
 │   ├── core-enum       io.autocrypt.vehicles.pki.x509.enums. API 와 저장소가 함께 쓰는 enum (CertType, KeyUsage, StatType ...)
 │   └── core-api        유일한 실행 모듈. x509.domain / usecase / api + support(에러 어휘, 웹 설정, 어드바이스)
+├── clients
+│   └── client-crypto   x509.client.crypto. 키 생성과 서명(HSM/KMS 자리). 개인키는 이 모듈 밖으로 나가지 않는다
 ├── storage
 │   └── db-core         x509.storage(JPA 엔티티, Spring Data) + 저장소 인프라. core-enum 만 의존하고 도메인을 모른다
 ├── support
@@ -28,7 +33,8 @@ x509-pki
 ├── tests
 │   └── api-docs        Spring REST Docs 테스트 베이스
 └── docs
-    ├── X509_RA_API.md    x509-ra 에서 옮긴 API 계약
+    ├── X509_RA_API.md    x509-ra 에서 옮긴 API 계약과 구현 현황
+    ├── API_SCENARIOS.md  REST API 호출 시나리오 (scripts/api-scenario.sh 로 실행)
     ├── ARCHITECTURE.md   규칙, 계층, 도메인 서비스, 트랜잭션 (템플릿)
     ├── ERROR_HANDLING.md 에러 코드와 오류 응답
     ├── SCALING.md        구조를 키우는 시점과 순서 (템플릿)
@@ -41,7 +47,9 @@ x509-pki
 
 ## 원본과 맞춘 것
 
-- **경로와 미디어 타입.** v1(`/api/certificates/**`, `/api/certpolicies/**` ...)과 v2(`/api/v2/**`), `/cmp`, `/internal/deployment/tls-bundle` 을 그대로 둔다.
+- **경로와 미디어 타입.** x509-ra 의 v2 API 를 경로에서 `/v2` 만 빼고 옮겼다(`/api/v2/certificates/root` → `/api/certificates/root`).
+  v1 API 는 옮기지 않았고, 인증서의 CRL DP 에 들어가는 공개 CRL 배포 경로 `GET /api/crl/{caSkiHex}.crl` 만 원본 그대로 남겼다.
+  `/cmp`, 키 합의·동기화, 통계, `/internal/deployment/tls-bundle` 도 원본 경로 그대로다.
 - **JSON.** `Instant` 는 초 단위 ISO-8601, `byte[]` 는 Base64, 요청에 없는 `boolean`/`int` 는 `false`/`0` (`support.web.JacksonConfig`).
 - **오류 응답.** `title: PKI-ERROR`, `errorCode`, `timestamp`, `errors[{field, message}]` 를 가진 ProblemDetail ([ERROR_HANDLING.md](docs/ERROR_HANDLING.md)).
 - **조건부 엔드포인트.** 키 합의는 `key-agreement.role=server`, 키 동기화는 `pki.features.key-sync.enabled=true` 일 때만 등록된다.
@@ -50,9 +58,7 @@ x509-pki
 
 ```bash
 ./gradlew :core:core-api:bootRun
-curl -X POST localhost:8080/api/v2/certificates/root -H 'Content-Type: application/json' \
-     -d '{"certProfileId":1,"subjectDn":"CN=root","validityPeriod":"1Y"}'     # 400 COMMON_INVALID_INPUT
-curl localhost:8080/api/v2/certificates/ca                                     # 501 COMMON_NOT_IMPLEMENTED
+scripts/api-scenario.sh              # 다른 터미널에서. 프로파일 → Root → Sub CA → Leaf → 조회·다운로드 → 오류 응답
 ```
 
 ```bash

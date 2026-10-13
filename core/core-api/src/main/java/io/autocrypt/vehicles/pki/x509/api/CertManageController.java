@@ -20,14 +20,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class CertManageController {
 
-    @PostMapping("/api/v2/certificates/leaf/{akiHex}/renewal")
+    @PostMapping("/api/certificates/leaf/{akiHex}/renewal")
     public ResponseEntity<RenewalResponse> renewLeafCertificate(@PathVariable String akiHex,
             @RequestBody @Valid RenewalRequest request) {
         throw new CoreException(ErrorCode.NOT_IMPLEMENTED);
     }
 
     /** 성공하면 200 빈 본문. */
-    @PostMapping("/api/v2/certificates/leaf/{akiHex}/revocation")
+    @PostMapping("/api/certificates/leaf/{akiHex}/revocation")
     public ResponseEntity<Void> revokeLeafCertificate(@PathVariable String akiHex,
             @RequestBody @Valid RevocationRequest request) {
         throw new CoreException(ErrorCode.NOT_IMPLEMENTED);

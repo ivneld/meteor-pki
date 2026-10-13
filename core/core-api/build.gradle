@@ -7,11 +7,16 @@ jar.enabled = false
 dependencies {
     implementation project(':core:core-enum')
     implementation project(':storage:db-core')
+    implementation project(':clients:client-crypto')
     implementation project(':support:logging')
     implementation project(':support:monitoring')
 
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // X.509 구조(인증서, 확장, CSR)를 만들고 읽는다. 도메인 모델이 쓰는 순수 자바 라이브러리다
+    implementation "org.bouncycastle:bcprov-jdk18on:${property('bouncycastleVersion')}"
+    implementation "org.bouncycastle:bcpkix-jdk18on:${property('bouncycastleVersion')}"
 
     testImplementation project(':tests:api-docs')
     testImplementation "com.tngtech.archunit:archunit-junit5:${property('archUnitVersion')}"
