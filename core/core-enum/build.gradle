@@ -1,2 +1,0 @@
-// enum 모듈. 도메인 enum 을 io.autocrypt.vehicles.pki.x509.enums 한 패키지에 모두 둔다. 어떤 모듈·라이브러리에도 의존하지 않는다.
-// storage 와 core-api 가 함께 쓰므로 엔티티는 enum 컬럼으로 저장하고 어댑터는 변환 없이 그대로 쓴다. 에러 어휘는 여기 두지 않는다.

@@ -8,7 +8,7 @@
 | 트리거 | 하지 말아야 할 것 | 해야 할 것 |
 |---|---|---|
 | 새 기능·도메인이 생겼다 | 새 애플리케이션이나 모듈부터 만든다 | 같은 계층에 클래스를 추가한다. [ARCHITECTURE.md 의 새 기능 추가](ARCHITECTURE.md#새-기능-추가) |
-| `domain` 패키지가 너무 커져 한눈에 들어오지 않는다 | 계층 구조를 버리고 기능별로 다시 짠다 | 계층은 유지한 채 그 안에 도메인별 하위 패키지(`domain.order`, `domain.payment`)를 만든다. 패키지 이동만으로 끝나며 ArchUnit 규칙은 `io.autocrypt.vehicles.pki.x509.domain..` 패턴이라 그대로 동작한다 |
+| `domain` 패키지가 너무 커져 한눈에 들어오지 않는다 | 계층 구조를 버리고 기능별로 다시 짠다 | 계층은 유지한 채 그 안에 도메인별 하위 패키지(`domain.order`, `domain.payment`)를 만든다. 패키지 이동만으로 끝나며 ArchUnit 규칙은 `com.meteor.pki.domain..` 패턴이라 그대로 동작한다 |
 | `*Writer` 하나가 비대해졌다 | `*Service`, `*Manager` 같은 새 이름으로 쪼갠다 | 먼저 규칙이 Writer 에 새어 있지 않은지(S-04) 보고 애그리거트·Policy 로 내린다. 그래도 크면 `*Writer` 를 둘로 나누되 이름은 `*Writer` 로 끝낸다 |
 | 전체 요청이 늘어 응답이 느리다 | 코드를 나눈다 | 인스턴스를 늘린다. 앱은 무상태이므로 코드 변경이 없다. 먼저 병목이 앱인지 DB인지 외부 API인지 지표로 확인한다 |
 | 조회 API 가 무겁다 | 인스턴스를 늘린다 | 조회 전용 `*Reader` 메서드와 Spring Data 쿼리로 필요한 컬럼만 읽고 캐시한다. 여러 테이블을 묶는 화면은 조회 전용 `*Reader` 에서 JOIN 쿼리로 만든다 |
@@ -32,7 +32,7 @@
 
 ## core-domain 모듈 추출
 
-배치처럼 같은 도메인 규칙을 쓰는 두 번째 실행 모듈이 생기면 `io.autocrypt.vehicles.pki.x509.domain` 과 `io.autocrypt.vehicles.pki.x509.support.error` 를 라이브러리 모듈
+배치처럼 같은 도메인 규칙을 쓰는 두 번째 실행 모듈이 생기면 `com.meteor.pki.domain` 과 `com.meteor.pki.support.error` 를 라이브러리 모듈
 `core/core-domain` 으로 옮긴다. core-enum 과 storage 는 이미 모듈이다.
 
 ```
@@ -45,7 +45,7 @@ core-batch ──┘
 - 도메인 모델은 R-01 로 프레임워크를 모르고, domain 은 usecase·api·client 를 모르므로 파일 이동으로 끝난다.
 - usecase 는 애플리케이션마다 다르므로 옮기지 않는다. 배치는 자기 모듈에 흐름과 트랜잭션 경계(예: 청크 단위 커밋)를 둔다. 도메인 서비스는
   기본 전파라 배치의 청크 트랜잭션에 그대로 참여한다.
-- `ArchitectureRules` 는 core-domain 이 아니라 각 실행 모듈의 테스트에 두고 `io.autocrypt.vehicles.pki.x509` 전체를 검사한다.
+- `ArchitectureRules` 는 core-domain 이 아니라 각 실행 모듈의 테스트에 두고 `com.meteor.pki` 전체를 검사한다.
 
 ## 다른 애플리케이션과 연동하기
 

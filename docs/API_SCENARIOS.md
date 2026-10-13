@@ -91,7 +91,7 @@ curl 'localhost:8080/api/profiles?page=0&size=20'
 
 ```bash
 curl -X POST localhost:8080/api/certificates/root -H 'Content-Type: application/json' \
-     -d '{"certProfileId":1,"subjectDn":"CN=Scenario Root CA,O=Autocrypt,C=KR"}' > root.pem
+     -d '{"certProfileId":1,"subjectDn":"CN=Scenario Root CA,O=Meteor,C=KR"}' > root.pem
 openssl x509 -in root.pem -noout -text
 ```
 
@@ -106,7 +106,7 @@ curl localhost:8080/api/certificates/ca
 ```
 
 ```json
-[{"subjectDn":"CN=Scenario Root CA,O=Autocrypt,C=KR","skiHex":"B296F3...","certType":"ROOT","certStatus":"VALID",
+[{"subjectDn":"CN=Scenario Root CA,O=Meteor,C=KR","skiHex":"B296F3...","certType":"ROOT","certStatus":"VALID",
   "trackingId":"...","certPem":"-----BEGIN CERTIFICATE-----...", ...}]
 ```
 
@@ -117,7 +117,7 @@ curl localhost:8080/api/certificates/ca
 
 ```bash
 curl -X POST localhost:8080/api/certificates/sub-ca -H 'Content-Type: application/json' -d '{
-  "certProfileId":2,"subjectDn":"CN=Scenario Issuing CA,O=Autocrypt,C=KR",
+  "certProfileId":2,"subjectDn":"CN=Scenario Issuing CA,O=Meteor,C=KR",
   "akiHex":"{Root SKI}","includeDefaultCrlDp":true,"validityPeriod":"P5Y"}'
 ```
 
@@ -147,7 +147,7 @@ curl localhost:8080/api/certificates/ca/{Sub CA SKI}
 
 ```bash
 curl -X POST localhost:8080/api/certificates/leaf/spki -H 'Content-Type: application/json' -d '{
-  "subjectDn":"CN=www.example.com,O=Autocrypt","akiHex":"{Sub CA SKI}",
+  "subjectDn":"CN=www.example.com,O=Meteor","akiHex":"{Sub CA SKI}",
   "subjectPublicKeyInfoDer":"{Base64 SPKI}","certProfileId":3,"includeDefaultCrlDp":true}'
 ```
 
@@ -159,7 +159,7 @@ curl -X POST localhost:8080/api/certificates/leaf/spki -H 'Content-Type: applica
 맞지 않으면 400 "Failed to verify P10CR signature." 다.
 
 ```bash
-openssl req -new -key device.key -subj "/CN=api.example.com/O=Autocrypt" \
+openssl req -new -key device.key -subj "/CN=api.example.com/O=Meteor" \
     -addext "subjectAltName=DNS:api.example.com,DNS:api2.example.com" -out device.csr
 curl -X POST localhost:8080/api/certificates/leaf/p10cr -H 'Content-Type: application/json' -d "{
   \"p10crPem\":$(python3 -c 'import json; print(json.dumps(open("device.csr").read()))'),

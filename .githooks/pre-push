@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# 푸시 전에 아키텍처 리뷰를 돌린다. 활성화: git config core.hooksPath .githooks
-# 건너뛰기: SKIP_ARCH_REVIEW=1 git push
 [ "${SKIP_ARCH_REVIEW:-0}" = 1 ] && exit 0
 cd "$(git rev-parse --show-toplevel)"
 command -v pi >/dev/null 2>&1 || { echo "pi 가 없어 아키텍처 리뷰를 건너뜁니다. 설치: npm i -g @earendil-works/pi-coding-agent" >&2; exit 0; }
-# pre-push 는 stdin 으로 ref 목록을 받으므로 pi 에는 닫힌 stdin 을 준다
 pi --approve -p --no-session "/arch-review" < /dev/null
 code=$?
 if [ "$code" = 1 ]; then

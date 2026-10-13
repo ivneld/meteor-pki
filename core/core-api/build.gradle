@@ -1,6 +1,3 @@
-// 프로젝트에서 유일하게 실행 가능한 모듈. domain / usecase / api 세 계층 패키지가 이 안에 있다.
-// JPA 엔티티와 Spring Data 는 storage/db-core 에 있고, domain 의 *Repository 어댑터가 그것을 애그리거트로 바꾼다.
-// 계층 사이의 경계는 ArchitectureRules(ArchUnit)가 강제한다.
 bootJar.enabled = true
 jar.enabled = false
 
@@ -14,7 +11,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
-    // X.509 구조(인증서, 확장, CSR)를 만들고 읽는다. 도메인 모델이 쓰는 순수 자바 라이브러리다
     implementation "org.bouncycastle:bcprov-jdk18on:${property('bouncycastleVersion')}"
     implementation "org.bouncycastle:bcpkix-jdk18on:${property('bouncycastleVersion')}"
 

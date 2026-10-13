@@ -1,5 +1,3 @@
-# 활성 프로필 이름으로 logback 설정 파일을 고른다. (logback-local.xml, logback-dev.xml ...)
 logging.config: classpath:logback/logback-${spring.profiles.active}.xml
 
-# OTLP 메트릭 export 는 기본 비활성. 수집기가 준비된 환경에서 프로필별로 켠다.
 management.otlp.metrics.export.enabled: false

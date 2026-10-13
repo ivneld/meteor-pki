@@ -1,8 +1,0 @@
-package io.autocrypt.vehicles.pki.x509.enums;
-
-public enum KeyUsage {
-
-    DIGITAL_SIGNATURE, NON_REPUDIATION, KEY_ENCIPHERMENT, DATA_ENCIPHERMENT, KEY_AGREEMENT, KEY_CERT_SIGN, CRL_SIGN,
-    ENCIPHER_ONLY, DECIPHER_ONLY
-
-}

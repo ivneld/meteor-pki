@@ -21,12 +21,12 @@
 ```
 x509-pki
 ├── core
-│   ├── core-enum       io.autocrypt.vehicles.pki.x509.enums. API 와 저장소가 함께 쓰는 enum (CertType, KeyUsage, StatType ...)
-│   └── core-api        유일한 실행 모듈. x509.domain / usecase / api + support(에러 어휘, 웹 설정, 어드바이스)
+│   ├── core-enum       com.meteor.pki.enums. API 와 저장소가 함께 쓰는 enum (CertType, KeyUsage, StatType ...)
+│   └── core-api        유일한 실행 모듈. domain / usecase / api + support(에러 어휘, 웹 설정, 어드바이스)
 ├── clients
-│   └── client-crypto   x509.client.crypto. 키 생성과 서명(HSM/KMS 자리). 개인키는 이 모듈 밖으로 나가지 않는다
+│   └── client-crypto   client.crypto. 키 생성과 서명(HSM/KMS 자리). 개인키는 이 모듈 밖으로 나가지 않는다
 ├── storage
-│   └── db-core         x509.storage(JPA 엔티티, Spring Data) + 저장소 인프라. core-enum 만 의존하고 도메인을 모른다
+│   └── db-core         storage(JPA 엔티티, Spring Data) + 저장소 인프라. core-enum 만 의존하고 도메인을 모른다
 ├── support
 │   ├── logging         프로필별 logback, OpenTelemetry, Sentry
 │   └── monitoring      Actuator + Prometheus

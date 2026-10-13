@@ -5,8 +5,8 @@
 지킨다. 아직 구현하지 않은 엔드포인트는 올바른 요청에 `501 COMMON_NOT_IMPLEMENTED` 로 응답한다([구현 현황](#구현-현황)).
 호출 순서 예시는 [API_SCENARIOS.md](API_SCENARIOS.md).
 
-- 원본 위치: `x509-ra/src/main/java/io/autocrypt/vehicles/pki/x509ra/{cert,profile,stats}/presentation/{api,internal}`
-- 옮긴 위치: `core/core-api/src/main/java/io/autocrypt/vehicles/pki/x509/api` (컨트롤러), `api.request`, `api.response`, enum 은 core-enum 의 `x509.enums`
+- 원본 위치: `x509-ra` 의 `{cert,profile,stats}/presentation/{api,internal}`
+- 옮긴 위치: `core/core-api/src/main/java/com/meteor/pki/api` (컨트롤러), `api.request`, `api.response`, enum 은 core-enum 의 `com.meteor.pki.enums`
 - 뷰(`presentation/ui`, `/view/**`, `/login`)와 화면 전용 어드바이스는 옮기지 않았다.
 
 ## 원본과 다른 점

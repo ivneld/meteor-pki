@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# docs/API_SCENARIOS.md 의 시나리오를 실행 중인 서버에 차례로 호출하고 openssl 로 결과를 검증한다.
-#
-#   ./gradlew :core:core-api:bootRun                 # 다른 터미널에서 서버 실행 (local 프로필, H2 메모리 DB)
-#   scripts/api-scenario.sh [http://localhost:8080]   # 요구사항: curl, python3, openssl
-#
-# 서버를 다시 띄우지 않고 여러 번 돌려도 되도록 프로파일 이름과 DN 뒤에 실행마다 다른 접미어를 붙인다.
 set -euo pipefail
 
 BASE=${1:-http://localhost:8080}
@@ -15,7 +9,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 step() { printf '\n== %s\n' "$*"; }
 json() { python3 -c "import sys, json; print(json.load(sys.stdin)$1)"; }
-expect_status() {  # expect_status <기대 상태> <curl 인자...>
+expect_status() {
     local expected=$1; shift
     local status
     status=$(curl -s -o "$WORK/body" -w '%{http_code}' "$@")
@@ -59,17 +53,17 @@ expect_status 200 "$BASE/api/profiles?page=0&size=5" | json "['totalElements']"
 
 step "6. Root CA 발급 (PEM 응답)"
 expect_status 200 -X POST "$BASE/api/certificates/root" -H "$JSON" \
-    -d "{\"certProfileId\":$ROOT_PROFILE,\"subjectDn\":\"CN=Scenario Root CA $RUN,O=Autocrypt,C=KR\"}" > "$WORK/root.pem"
+    -d "{\"certProfileId\":$ROOT_PROFILE,\"subjectDn\":\"CN=Scenario Root CA $RUN,O=Meteor,C=KR\"}" > "$WORK/root.pem"
 openssl x509 -in "$WORK/root.pem" -noout -subject -ext basicConstraints
 
 step "7. CA 목록에서 Root 의 SKI 찾기"
 CA_LIST=$(expect_status 200 "$BASE/api/certificates/ca")
-ROOT_SKI=$(echo "$CA_LIST" | python3 -c "import sys,json; print([c['skiHex'] for c in json.load(sys.stdin) if c['subjectDn']=='CN=Scenario Root CA $RUN,O=Autocrypt,C=KR'][0])")
+ROOT_SKI=$(echo "$CA_LIST" | python3 -c "import sys,json; print([c['skiHex'] for c in json.load(sys.stdin) if c['subjectDn']=='CN=Scenario Root CA $RUN,O=Meteor,C=KR'][0])")
 echo "root SKI=$ROOT_SKI"
 
 step "8. Sub CA 발급 (발급자 = Root, 기본 CRL DP 포함)"
 expect_status 200 -X POST "$BASE/api/certificates/sub-ca" -H "$JSON" -d "{
-  \"certProfileId\":$SUB_PROFILE,\"subjectDn\":\"CN=Scenario Issuing CA $RUN,O=Autocrypt,C=KR\",
+  \"certProfileId\":$SUB_PROFILE,\"subjectDn\":\"CN=Scenario Issuing CA $RUN,O=Meteor,C=KR\",
   \"akiHex\":\"$ROOT_SKI\",\"includeDefaultCrlDp\":true,\"validityPeriod\":\"P5Y\"}" \
     | json "['x509CertificateDer']" | pem_from_der_b64 > "$WORK/sub.pem"
 openssl x509 -in "$WORK/sub.pem" -noout -subject -issuer -ext basicConstraints,crlDistributionPoints,authorityInfoAccess
@@ -82,13 +76,13 @@ step "10. Leaf 발급 - 공개키(SPKI)"
 openssl ecparam -name prime256v1 -genkey -noout -out "$WORK/device.key" 2>/dev/null
 SPKI=$(openssl pkey -in "$WORK/device.key" -pubout -outform der | base64 | tr -d '\n')
 expect_status 200 -X POST "$BASE/api/certificates/leaf/spki" -H "$JSON" -d "{
-  \"subjectDn\":\"CN=www.example.com,O=Autocrypt\",\"akiHex\":\"$SUB_SKI\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
+  \"subjectDn\":\"CN=www.example.com,O=Meteor\",\"akiHex\":\"$SUB_SKI\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
   \"certProfileId\":$TLS_PROFILE,\"includeDefaultCrlDp\":true}" \
     | json "['x509CertificateDer']" | pem_from_der_b64 > "$WORK/leaf-spki.pem"
 openssl x509 -in "$WORK/leaf-spki.pem" -noout -subject -ext subjectAltName,extendedKeyUsage
 
 step "11. Leaf 발급 - CSR(PKCS#10). SAN 은 CSR 의 것을 쓴다"
-openssl req -new -key "$WORK/device.key" -subj "/CN=api.example.com/O=Autocrypt" \
+openssl req -new -key "$WORK/device.key" -subj "/CN=api.example.com/O=Meteor" \
     -addext "subjectAltName=DNS:api.example.com,DNS:api2.example.com" -out "$WORK/device.csr" 2>/dev/null
 CSR=$(python3 -c "import json; print(json.dumps(open('$WORK/device.csr').read()))")
 expect_status 200 -X POST "$BASE/api/certificates/leaf/p10cr" -H "$JSON" -d "{

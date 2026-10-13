@@ -1,6 +1,5 @@
 client:
   crypto:
-    # 개인키를 암호화된 PKCS#8 파일로 두는 디렉터리. 비우면 메모리에만 두어 재기동하면 사라진다
     key-dir: ${CRYPTO_KEY_DIR:}
     key-password: ${CRYPTO_KEY_PASSWORD:changeit}
 

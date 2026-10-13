@@ -77,10 +77,9 @@ x509-ra 는 에러 범주로 HTTP 상태를 정한다. 옮길 때 같은 상태�
 
 ## 신규 에러 코드 추가하기
 
-1. **`ErrorCode` 에 항목 추가.** 접두어별 구분 주석 아래에 넣는다.
+1. **`ErrorCode` 에 항목 추가.** 같은 접두어 항목 묶음에 넣고, 묶음 사이는 빈 줄로 나눈다. 주석은 쓰지 않는다.
 
    ```java
-   // ----- 인증서 (CERT) -----
    CERT_RESOURCE_NOT_FOUND("CERT_RESOURCE_NOT_FOUND", 404, "Resource not found.", LogLevel.INFO),
    CERT_INVALID_INPUT("CERT_INVALID_INPUT", 400, "Invalid input.", LogLevel.INFO),
    ```

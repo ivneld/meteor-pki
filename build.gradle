@@ -49,18 +49,15 @@ subprojects {
         }
     }
 
-    // 기본은 라이브러리 모듈. 실행 모듈(core-api)만 bootJar 를 켠다.
     bootJar.enabled = false
     jar.enabled = true
 
-    // CI 에서 돌리는 기본 test 태스크: develop/restdocs 태그는 제외
     test {
         useJUnitPlatform {
             excludeTags 'develop', 'restdocs'
         }
     }
 
-    // 태그 기반 세부 태스크
     testing {
         suites {
             test {

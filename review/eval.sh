@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# 골든 세트로 리뷰 에이전트의 재현율·정밀도를 잰다. 프롬프트를 바꿀 때마다 실행한다.
-#
-#   review/eval.sh                # review/golden/cases/* 전부
-#   review/eval.sh 's05-*'        # 글로브로 일부만
-#
-# 모델과 토큰은 .env 에서 읽힌다 (.env.example). PI_BIN 으로 pi 실행 파일을 바꿀 수 있다
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"

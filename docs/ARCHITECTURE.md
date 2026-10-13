@@ -68,11 +68,11 @@ JPA 를 모르는 순수 객체라서 목 없이 단위 테스트한다. 도메�
 ## 계층과 모듈
 
 ```
-core-enum       io.autocrypt.vehicles.pki.x509.enums. 모든 도메인 enum. 어떤 모듈·라이브러리에도 의존하지 않는다
-core-api        유일한 실행 모듈. io.autocrypt.vehicles.pki.x509.domain / usecase / api + support(error, web, async)
-storage/db-core io.autocrypt.vehicles.pki.x509.storage(JPA 엔티티, Spring Data 인터페이스) + support.storage(DataSource, JPA 설정, BaseEntity).
+core-enum       com.meteor.pki.enums. 모든 도메인 enum. 어떤 모듈·라이브러리에도 의존하지 않는다
+core-api        유일한 실행 모듈. com.meteor.pki.domain / usecase / api + support(error, web, async)
+storage/db-core com.meteor.pki.storage(JPA 엔티티, Spring Data 인터페이스) + support.storage(DataSource, JPA 설정, BaseEntity).
                 도메인을 모른다. enum 은 core-enum 의 것을 @Enumerated(STRING) 컬럼으로, 값 객체는 컬럼으로 펼쳐 저장한다
-clients/*       외부 시스템 어댑터. io.autocrypt.vehicles.pki.x509.client.<이름>. 예: client-crypto(키 생성과 서명, HSM/KMS 자리)
+clients/*       외부 시스템 어댑터. com.meteor.pki.client.<이름>. 예: client-crypto(키 생성과 서명, HSM/KMS 자리)
 support/*       logging, monitoring
 ```
 
@@ -100,16 +100,16 @@ core-api ──► storage/db-core ──► core-enum
 ### 패키지 규약
 
 ```
-io.autocrypt.vehicles.pki.x509.enums              모든 도메인 enum (상태, 종류)                                                        (core-enum)
-io.autocrypt.vehicles.pki.x509.domain             애그리거트, 값 객체(record), *Policy           ← 도메인 모델. 순수 자바             (core-api)
+com.meteor.pki.enums              모든 도메인 enum (상태, 종류)                                                        (core-enum)
+com.meteor.pki.domain             애그리거트, 값 객체(record), *Policy           ← 도메인 모델. 순수 자바             (core-api)
                               *Reader, *Writer                               ← 도메인 서비스. Spring 빈
                               *Repository                                    ← 저장소 어댑터. 엔티티 ↔ 애그리거트
-io.autocrypt.vehicles.pki.x509.usecase            *UseCase, *Command, *Result                                                        (core-api)
-io.autocrypt.vehicles.pki.x509.api                *Controller                                                                        (core-api)
+com.meteor.pki.usecase            *UseCase, *Command, *Result                                                        (core-api)
+com.meteor.pki.api                *Controller                                                                        (core-api)
   api.request / api.response  요청·응답 DTO
-io.autocrypt.vehicles.pki.x509.storage            *Entity, *JpaRepository. 도메인을 모르며 상태는 enum 컬럼                          (storage/db-core)
-io.autocrypt.vehicles.pki.x509.client.<이름>      외부 연동 어댑터                                                                    (clients/*)
-io.autocrypt.vehicles.pki.x509.support            어느 계층에도 속하지 않는 공통 영역
+com.meteor.pki.storage            *Entity, *JpaRepository. 도메인을 모르며 상태는 enum 컬럼                          (storage/db-core)
+com.meteor.pki.client.<이름>      외부 연동 어댑터                                                                    (clients/*)
+com.meteor.pki.support            어느 계층에도 속하지 않는 공통 영역
   support.error                 ErrorCode, CoreException, LogLevel. 프레임워크를 모른다                          (core-api)
   support.web / support.async   어드바이스, ProblemDetails, 설정                                                  (core-api)
   support.storage               DataSource/JPA 설정, BaseEntity                                                   (storage/db-core)
@@ -247,18 +247,18 @@ ArchUnit 은 람다 본문의 호출도 감싸는 메서드의 것으로 세므�
 ```
 새 타입이 생겼다
   │
-  ├─ 식별자가 있고 상태가 바뀐다 ──▶ 애그리거트 (io.autocrypt.vehicles.pki.x509.domain)
+  ├─ 식별자가 있고 상태가 바뀐다 ──▶ 애그리거트 (com.meteor.pki.domain)
   │
-  ├─ enum 이다 ──▶ io.autocrypt.vehicles.pki.x509.enums (core-enum)     예: OrderStatus, PaymentMethod
+  ├─ enum 이다 ──▶ com.meteor.pki.enums (core-enum)     예: OrderStatus, PaymentMethod
   │                storage 의 엔티티도 같은 타입으로 저장하므로 모듈이 따로 있다
   │
-  └─ record 다 ──▶ io.autocrypt.vehicles.pki.x509.domain                예: Money, Address, Email
+  └─ record 다 ──▶ com.meteor.pki.domain                예: Money, Address, Email
 ```
 
 ## 영속화 결정
 
-JPA 를 쓰되 **도메인 모델로 쓰지 않고 영속 엔진으로만 쓴다.** 애그리거트는 순수 자바로 `io.autocrypt.vehicles.pki.x509.domain` 에, JPA 엔티티는 storage 모듈의
-`io.autocrypt.vehicles.pki.x509.storage` 에 있고, 둘 사이 변환은 domain 의 `*Repository` 어댑터가 한다. storage 모듈은 도메인을 모르지만 core-enum 은 알므로
+JPA 를 쓰되 **도메인 모델로 쓰지 않고 영속 엔진으로만 쓴다.** 애그리거트는 순수 자바로 `com.meteor.pki.domain` 에, JPA 엔티티는 storage 모듈의
+`com.meteor.pki.storage` 에 있고, 둘 사이 변환은 domain 의 `*Repository` 어댑터가 한다. storage 모듈은 도메인을 모르지만 core-enum 은 알므로
 상태는 enum 컬럼으로, 값 객체는 컬럼으로 펼쳐 저장하고 어댑터가 record 로 조립한다. 엔티티와 Spring Data 를 참조할 수 있는 곳은 storage 와
 `*Repository` 뿐이고(R-05), 도메인 모델이 JPA 를 모르는 것은 R-01 이 지킨다. 그 결과 JPA 의 이점 중 일부는 포기하고 일부는 유지한다.
 
@@ -333,12 +333,12 @@ VO 는 외부 의존이 없으므로 생성자의 검증 실패는 `IllegalArgum
 | 여러 도메인 서비스를 한 트랜잭션으로 묶는 usecase | `OrderUseCase.place` | `CertProfileUseCase.create` (EKU 확인 + 프로파일 저장) |
 | 외부 호출을 사이에 두고 트랜잭션을 나누는 usecase | `PaymentUseCase.pay` | `CertIssuanceUseCase` (키 생성·서명은 트랜잭션 밖, 저장만 `TransactionTemplate`) |
 
-1. core-enum 의 `io.autocrypt.vehicles.pki.x509.enums` 에 상태·종류 enum 을 둔다.
-2. `io.autocrypt.vehicles.pki.x509.domain` 에 애그리거트와 값 객체를 두고 순수 단위 테스트를 같이 쓴다. 상태 전이나 정책이 없는 기능이면 단순한 모델로 시작한다(S-02).
-3. storage/db-core 의 `io.autocrypt.vehicles.pki.x509.storage` 에 `*Entity` 와 `*JpaRepository` 를 둔다. 둘 다 public 이고 도메인을 모른다. 상태는 enum 컬럼(`@Enumerated(STRING)`), 값 객체는 컬럼으로 저장한다.
-4. `io.autocrypt.vehicles.pki.x509.domain` 에 `*Repository` 어댑터를 둔다. Spring Data 를 감싸 엔티티 ↔ 애그리거트 변환을 하고 애그리거트만 돌려준다. 왕복 테스트(`*RepositoryIT`)를 같이 쓴다.
-5. `io.autocrypt.vehicles.pki.x509.domain` 에 `*Reader` 와 `*Writer` 를 둔다. 자기 `*Repository` 만 쓴다.
-6. 흐름이 애그리거트 하나로 끝나면 `io.autocrypt.vehicles.pki.x509.api` 의 컨트롤러가 도메인 서비스를 바로 부른다. 여러 도메인 서비스를 엮거나 외부 시스템을 부르면 `io.autocrypt.vehicles.pki.x509.usecase` 에 `*UseCase` 와 `*Command` 를 둔다.
+1. core-enum 의 `com.meteor.pki.enums` 에 상태·종류 enum 을 둔다.
+2. `com.meteor.pki.domain` 에 애그리거트와 값 객체를 두고 순수 단위 테스트를 같이 쓴다. 상태 전이나 정책이 없는 기능이면 단순한 모델로 시작한다(S-02).
+3. storage/db-core 의 `com.meteor.pki.storage` 에 `*Entity` 와 `*JpaRepository` 를 둔다. 둘 다 public 이고 도메인을 모른다. 상태는 enum 컬럼(`@Enumerated(STRING)`), 값 객체는 컬럼으로 저장한다.
+4. `com.meteor.pki.domain` 에 `*Repository` 어댑터를 둔다. Spring Data 를 감싸 엔티티 ↔ 애그리거트 변환을 하고 애그리거트만 돌려준다. 왕복 테스트(`*RepositoryIT`)를 같이 쓴다.
+5. `com.meteor.pki.domain` 에 `*Reader` 와 `*Writer` 를 둔다. 자기 `*Repository` 만 쓴다.
+6. 흐름이 애그리거트 하나로 끝나면 `com.meteor.pki.api` 의 컨트롤러가 도메인 서비스를 바로 부른다. 여러 도메인 서비스를 엮거나 외부 시스템을 부르면 `com.meteor.pki.usecase` 에 `*UseCase` 와 `*Command` 를 둔다.
 7. 응답 DTO 는 getter 만 읽어 만들고 필드에는 도메인 타입을 두지 않는다(R-12).
 8. `ErrorCode` 에 접두어를 추가한다.
 9. `./gradlew test` 로 R 규칙을 통과하는지 확인한다.

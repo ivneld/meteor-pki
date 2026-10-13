@@ -1,21 +1,3 @@
-/**
- * /arch-review — 아키텍처 의미 규칙(S-01~S-08) 리뷰.
- *
- *   pi                                       대화형. 프롬프트에 /arch-review [--base <ref>] [--diff <patch>] [--no-archunit]
- *   pi --approve -p "/arch-review" </dev/null 비대화형. 종료 코드 0 PASS, 1 BLOCK(S-05/S-07 위반), 2 WARN
- *
- * 설정은 저장소 루트의 .env 에서 읽는다 (.env.example 참고).
- *   ARCH_REVIEW_MODEL=anthropic/claude-sonnet-4-5   리뷰 턴에만 쓸 모델. 비우면 현재 모델
- *   ANTHROPIC_API_KEY=...                           모델 제공자 토큰. pi 가 읽는 환경변수 이름 그대로
- *
- * 동작
- *   1. 로드 시 .env 를 읽어 아직 없는 환경변수만 채운다.
- *   2. input 이벤트에서 "/arch-review ..." 를 가로채 diff, 변경 파일, ArchUnit 결과, 규칙 문서를 모아 리뷰 프롬프트로 치환한다.
- *   3. before_agent_start 에서 그 턴에만 읽기 전용 도구, 리뷰어 시스템 프롬프트(review/prompts/reviewer.md), 리뷰 모델을 적용한다.
- *   4. agent_end 에서 findings 를 파싱해 판정을 내고 도구·모델을 되돌린다. 비대화형이면 종료 코드로 알린다.
- *
- * 프롬프트의 단일 출처는 review/prompts/*.md 와 docs/ARCHITECTURE.md, docs/REVIEW_AGENT.md 다. 여기에 규칙을 적지 않는다.
- */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -102,7 +84,6 @@ export default function (pi: ExtensionAPI) {
 		report(ctx, `arch-review: ${verdict}`, verdict === "PASS" ? "info" : "warning");
 	});
 
-	// 비대화형(print) 모드에서 판정을 종료 코드로 전달한다. pi 는 성공 시 0 으로 종료하므로 exit 직전에 올려 쓴다.
 	pi.on("session_shutdown", async (_event, ctx) => {
 		if (ctx.hasUI || exitCode === 0) return;
 		const code = exitCode;
@@ -122,7 +103,6 @@ function findRepoRoot(start: string): string {
 	}
 }
 
-/** KEY=VALUE 줄만 읽는다. 따옴표는 벗기고, 이미 있는 환경변수는 덮어쓰지 않는다. */
 function loadDotEnv(path: string) {
 	if (!existsSync(path)) return;
 	for (const raw of readFileSync(path, "utf8").split("\n")) {
