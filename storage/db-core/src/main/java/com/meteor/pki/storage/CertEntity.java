@@ -23,7 +23,8 @@ import jakarta.persistence.Version;
 @Entity
 @Table(name = "cert",
         uniqueConstraints = @UniqueConstraint(name = "uk_cert_aki_serial", columnNames = { "aki", "serial_number" }),
-        indexes = @Index(name = "idx_cert_ski", columnList = "ski"))
+        indexes = { @Index(name = "idx_cert_ski", columnList = "ski"),
+                @Index(name = "idx_cert_tracking_id", columnList = "tracking_id") })
 public class CertEntity extends BaseEntity {
 
     @Column(nullable = false, length = 40)
@@ -141,6 +142,10 @@ public class CertEntity extends BaseEntity {
 
     public CertStatus getStatus() {
         return status;
+    }
+
+    public String getTrackingId() {
+        return trackingId;
     }
 
     public Instant getRevokedAt() {

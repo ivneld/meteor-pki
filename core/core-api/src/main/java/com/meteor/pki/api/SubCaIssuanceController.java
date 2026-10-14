@@ -4,8 +4,6 @@ import com.meteor.pki.api.request.SubCaIssuanceRequest;
 import com.meteor.pki.api.request.SubCaRenewalRequest;
 import com.meteor.pki.api.response.SubCaIssuanceResponse;
 import com.meteor.pki.api.response.SubCaRenewalResponse;
-import com.meteor.pki.support.error.CoreException;
-import com.meteor.pki.support.error.ErrorCode;
 import com.meteor.pki.usecase.CertIssuanceUseCase;
 import jakarta.validation.Valid;
 
@@ -32,7 +30,8 @@ public class SubCaIssuanceController {
 
     @PostMapping("/api/certificates/sub-ca/renewal")
     public ResponseEntity<SubCaRenewalResponse> renewSubCaCertificate(@RequestBody @Valid SubCaRenewalRequest request) {
-        throw new CoreException(ErrorCode.NOT_IMPLEMENTED);
+        return ResponseEntity
+            .ok(new SubCaRenewalResponse(certIssuanceUseCase.renewSubCa(request.toCommand()).getDer()));
     }
 
 }

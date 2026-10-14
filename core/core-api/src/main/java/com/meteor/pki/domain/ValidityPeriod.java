@@ -1,5 +1,6 @@
 package com.meteor.pki.domain;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -19,6 +20,10 @@ public record ValidityPeriod(Instant notBefore, Instant notAfter) {
 
     public boolean contains(ValidityPeriod other) {
         return !other.notBefore.isBefore(notBefore) && !other.notAfter.isAfter(notAfter);
+    }
+
+    public Duration length() {
+        return Duration.between(notBefore, notAfter);
     }
 
 }

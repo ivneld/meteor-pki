@@ -44,6 +44,18 @@ public class CertRepository {
             .map(CertRepository::toDomain);
     }
 
+    public Optional<Cert> findLatestCa(KeyIdentifier subjectKeyId) {
+        return jpa.findFirstBySkiAndCertTypeInOrderByCreatedAtDescIdDesc(subjectKeyId.toHex(), Cert.CA_TYPES)
+            .map(CertRepository::toDomain);
+    }
+
+    public Optional<Cert> findLatestValidCaInLineage(String trackingId) {
+        return jpa
+            .findFirstByTrackingIdAndCertTypeInAndStatusOrderByCreatedAtDescIdDesc(trackingId, Cert.CA_TYPES,
+                    CertStatus.VALID)
+            .map(CertRepository::toDomain);
+    }
+
     public List<Cert> findVisibleCas() {
         return jpa.findAllByCertTypeInAndHiddenFalse(Cert.CA_TYPES).stream().map(CertRepository::toDomain).toList();
     }
@@ -55,7 +67,7 @@ public class CertRepository {
     private static Cert toDomain(CertEntity entity) {
         return Cert.restore(entity.getId(), entity.getDer(), entity.getCertType(), entity.getStatus(),
                 entity.getPrivateKeyId() == null ? null : new PrivateKeyId(entity.getPrivateKeyId()), entity.isHidden(),
-                entity.getCreatedAt(), entity.getRevocationReason() == null ? null
+                entity.getCreatedAt(), entity.getTrackingId(), entity.getRevocationReason() == null ? null
                         : new Revocation(entity.getRevocationReason(), entity.getRevokedAt()));
     }
 

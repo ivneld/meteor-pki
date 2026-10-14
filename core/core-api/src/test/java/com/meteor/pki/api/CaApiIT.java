@@ -101,6 +101,93 @@ class CaApiIT extends ApiIT {
             .andExpect(jsonPath("$.errorCode").value("COMMON_INVALID_INPUT"));
     }
 
+    @Test
+    void renewsAndRevokesASubCa() throws Exception {
+        long rootProfile = createProfile("ca-renew-root", "ROOT", "EC-P-256");
+        long subProfile = createProfile("ca-renew-sub", "SUB", "EC-P-256");
+        mockMvc
+            .perform(post("/api/certificates/root").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"certProfileId\":" + rootProfile + ",\"subjectDn\":\"CN=Renew API Root\"}"))
+            .andExpect(status().isOk());
+        String rootSki = caSkiBySubject("CN=Renew API Root");
+        mockMvc
+            .perform(post("/api/certificates/sub-ca").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"certProfileId\":" + subProfile + ",\"subjectDn\":\"CN=Renew API Sub\",\"akiHex\":\""
+                        + rootSki + "\",\"validityPeriod\":\"P11Y\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("CERT_INVALID_INPUT"));
+        mockMvc
+            .perform(post("/api/certificates/sub-ca").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"certProfileId\":" + subProfile + ",\"subjectDn\":\"CN=Renew API Sub\",\"akiHex\":\""
+                        + rootSki + "\",\"validityPeriod\":\"P2Y\"}"))
+            .andExpect(status().isOk());
+        String subSki = caSkiBySubject("CN=Renew API Sub");
+        String subSerial = JsonPath.read(mockMvc.perform(get("/api/certificates/ca/{skiHex}", subSki))
+            .andReturn()
+            .getResponse()
+            .getContentAsString(), "$.serialNumberHex");
+
+        mockMvc
+            .perform(post("/api/certificates/sub-ca/renewal").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + subSerial + "\",\"akiHex\":\"" + rootSki
+                        + "\",\"activationStartDaysAgo\":0,\"validityPeriod\":\"P20Y\","
+                        + "\"revokeOriginalCertificate\":true,\"useLatestIssuer\":false}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("Requested validity is outside the issuer's validity period."));
+        mockMvc
+            .perform(post("/api/certificates/sub-ca/renewal").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + subSerial + "\",\"akiHex\":\"" + rootSki
+                        + "\",\"activationStartDaysAgo\":0,\"validityPeriod\":\"P1Y\","
+                        + "\"revokeOriginalCertificate\":true,\"useLatestIssuer\":false}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.x509CertificateDer").isString());
+
+        String list = mockMvc.perform(get("/api/certificates/ca")).andReturn().getResponse().getContentAsString();
+        java.util.List<String> statuses = JsonPath.read(list, "$[?(@.subjectDn == 'CN=Renew API Sub')].certStatus");
+        java.util.List<String> skis = JsonPath.read(list, "$[?(@.subjectDn == 'CN=Renew API Sub')].skiHex");
+        org.assertj.core.api.Assertions.assertThat(statuses).containsExactlyInAnyOrder("REVOKED", "VALID");
+        String renewedSki = skis.stream().filter(ski -> !ski.equals(subSki)).findFirst().orElseThrow();
+        String renewedSerial = JsonPath.read(mockMvc.perform(get("/api/certificates/ca/{skiHex}", renewedSki))
+            .andReturn()
+            .getResponse()
+            .getContentAsString(), "$.serialNumberHex");
+        String rootSerial = JsonPath.read(mockMvc.perform(get("/api/certificates/ca/{skiHex}", rootSki))
+            .andReturn()
+            .getResponse()
+            .getContentAsString(), "$.serialNumberHex");
+
+        mockMvc
+            .perform(post("/api/certificates/sub-ca/{akiHex}/revocation", rootSki)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + renewedSerial + "\",\"reason\":7}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("Unsupported CRL reason code."));
+        mockMvc
+            .perform(post("/api/certificates/sub-ca/{akiHex}/revocation", rootSki)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + renewedSerial + "\",\"reason\":1}"))
+            .andExpect(status().isOk());
+        mockMvc.perform(get("/api/certificates/ca/{skiHex}", renewedSki)).andExpect(status().isNotFound());
+        mockMvc
+            .perform(post("/api/certificates/sub-ca/{akiHex}/revocation", rootSki)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + renewedSerial + "\",\"reason\":1}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("Can not revoke certificate"));
+        mockMvc
+            .perform(post("/api/certificates/sub-ca/{akiHex}/revocation", rootSki)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + rootSerial + "\",\"reason\":1}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("CERT_REVOKE_ROOT_FORBIDDEN"));
+        mockMvc
+            .perform(post("/api/certificates/sub-ca/{akiHex}/revocation", rootSki)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"0A\",\"reason\":1}"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("CERT_RESOURCE_NOT_FOUND"));
+    }
+
     private long createProfile(String name, String type, String keyAlgorithm) throws Exception {
         String body = mockMvc
             .perform(post("/api/profiles").contentType(MediaType.APPLICATION_JSON)

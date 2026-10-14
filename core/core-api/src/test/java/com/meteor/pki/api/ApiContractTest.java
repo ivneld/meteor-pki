@@ -76,9 +76,6 @@ class ApiContractTest {
                         "{\"serialNumberHex\":\"01\",\"activationStartDaysAgo\":0,\"revokeOriginalCertificate\":true}"),
                 Arguments.of("POST", "/api/certificates/leaf/0A/revocation", JSON,
                         "{\"serialNumberHex\":\"01\",\"reason\":1}"),
-                Arguments.of("POST", "/api/certificates/sub-ca/renewal", JSON,
-                        "{\"serialNumberHex\":\"01\",\"akiHex\":\"0A\",\"activationStartDaysAgo\":0,"
-                                + "\"useExistingPublicKey\":true,\"revokeOriginalCertificate\":false,\"useLatestIssuer\":true}"),
                 Arguments.of("GET", "/api/crls/bulk.zip", null, null),
                 Arguments.of("GET", "/api/crls/0A.crl", null, null),
                 Arguments.of("POST", "/api/crls/0A/issue", null, null),

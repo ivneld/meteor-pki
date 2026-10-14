@@ -22,7 +22,9 @@ import com.meteor.pki.domain.PrivateKeyId;
 import com.meteor.pki.domain.SerialNumber;
 import com.meteor.pki.domain.SubjectPublicKey;
 import com.meteor.pki.domain.TbsCertificate;
+import com.meteor.pki.domain.ValidityPeriod;
 import com.meteor.pki.enums.CertType;
+import com.meteor.pki.enums.CrlReason;
 import com.meteor.pki.support.error.CoreException;
 import com.meteor.pki.support.error.ErrorCode;
 import org.bouncycastle.asn1.x509.Extension;
@@ -89,6 +91,33 @@ public class CertIssuanceUseCase {
         Cert subCa = Cert.issuedSubCa(der, keyId);
 
         return transaction.execute(status -> certWriter.register(subCa));
+    }
+
+    public Cert renewSubCa(SubCaRenewCommand command) {
+        Instant now = clock.instant();
+        Cert original = certReader.get(command.authorityKeyId(), command.serialNumber());
+        original.ensureRenewable(CertType.SUB, now);
+        Cert issuer = command.useLatestIssuer() ? certReader.getLatestIssuerInLineage(original.getAuthorityKeyId())
+                : certReader.getIssuer(original.getAuthorityKeyId());
+        ValidityPeriod validity = original.renewalValidity(command.options(), now);
+        issuer.ensureCanIssue(CertType.SUB, validity, now);
+
+        PrivateKeyId keyId = PrivateKeyId.generate(now);
+        SubjectPublicKey publicKey = generateKeyPair(keyId, original.getKeyAlgorithm());
+        CertificateTemplate template = original.renewalTemplate(issuer, publicKey, validity, distributionPoints);
+        byte[] der = sign(template, issuer.getPrivateKeyId(), issuer.getSubjectPublicKey());
+        Cert renewed = Cert.renewedSubCa(der, keyId, original);
+
+        return transaction.execute(status -> {
+            certReader.get(original.getAuthorityKeyId(), original.getSerialNumber())
+                .ensureRenewable(CertType.SUB, clock.instant());
+            Cert registered = certWriter.register(renewed);
+            if (command.revokeOriginalCertificate()) {
+                certWriter.revoke(original.getAuthorityKeyId(), original.getSerialNumber(), CertType.SUB,
+                        CrlReason.SUPERSEDED);
+            }
+            return registered;
+        });
     }
 
     public Cert issueLeaf(LeafIssueCommand command) {

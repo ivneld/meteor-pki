@@ -25,6 +25,17 @@ public class CertReader {
                 .property("akiHex", authorityKeyId.toHex()));
     }
 
+    public Cert getLatestIssuerInLineage(KeyIdentifier authorityKeyId) {
+        Cert previousIssuer = certRepository.findLatestCa(authorityKeyId)
+            .orElseThrow(() -> new CoreException(ErrorCode.CERT_RESOURCE_NOT_FOUND,
+                    "Failed to find a CA certificate matching the AKI.")
+                .property("akiHex", authorityKeyId.toHex()));
+        return certRepository.findLatestValidCaInLineage(previousIssuer.getTrackingId())
+            .orElseThrow(() -> new CoreException(ErrorCode.CERT_RESOURCE_NOT_FOUND,
+                    "Failed to find a valid CA certificate in the issuer's lineage.")
+                .property("akiHex", authorityKeyId.toHex()));
+    }
+
     public Cert getCa(KeyIdentifier subjectKeyId) {
         return certRepository.findLatestValidCa(subjectKeyId)
             .orElseThrow(() -> new CoreException(ErrorCode.CERT_RESOURCE_NOT_FOUND,

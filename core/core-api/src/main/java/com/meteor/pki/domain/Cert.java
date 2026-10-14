@@ -22,6 +22,7 @@ import com.meteor.pki.support.error.ErrorCode;
 import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
+import org.bouncycastle.asn1.x509.Extensions;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
 import org.bouncycastle.cert.X509CertificateHolder;
@@ -48,10 +49,12 @@ public class Cert {
 
     private final Instant createdAt;
 
+    private final String trackingId;
+
     private final Revocation revocation;
 
     private Cert(Long id, byte[] der, CertType certType, CertStatus status, PrivateKeyId privateKeyId, boolean hidden,
-            Instant createdAt, Revocation revocation) {
+            Instant createdAt, String trackingId, Revocation revocation) {
         this.id = id;
         this.der = der.clone();
         this.holder = parse(der);
@@ -60,11 +63,12 @@ public class Cert {
         this.privateKeyId = privateKeyId;
         this.hidden = hidden;
         this.createdAt = createdAt;
+        this.trackingId = trackingId == null ? sha256Hex(der) : trackingId;
         this.revocation = revocation;
     }
 
     public static Cert issuedRoot(byte[] der, PrivateKeyId privateKeyId) {
-        Cert cert = new Cert(null, der, CertType.ROOT, CertStatus.VALID, privateKeyId, false, null, null);
+        Cert cert = new Cert(null, der, CertType.ROOT, CertStatus.VALID, privateKeyId, false, null, null, null);
         BasicConstraints basicConstraints = cert.basicConstraints();
         if (basicConstraints == null || !basicConstraints.isCA() || basicConstraints.getPathLenConstraint() != null) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "BasicConstraints must indicate an unconstrained CA");
@@ -78,7 +82,21 @@ public class Cert {
     }
 
     public static Cert issuedSubCa(byte[] der, PrivateKeyId privateKeyId) {
-        Cert cert = new Cert(null, der, CertType.SUB, CertStatus.VALID, privateKeyId, false, null, null);
+        return subCa(der, privateKeyId, null);
+    }
+
+    public static Cert renewedSubCa(byte[] der, PrivateKeyId privateKeyId, Cert original) {
+        Cert renewed = subCa(der, privateKeyId, original.trackingId);
+        if (!renewed.getSubjectDn().equals(original.getSubjectDn())
+                || renewed.getSubjectKeyId().equals(original.getSubjectKeyId())) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
+                    "Renewed certificate must keep the subject and use a new key");
+        }
+        return renewed;
+    }
+
+    private static Cert subCa(byte[] der, PrivateKeyId privateKeyId, String trackingId) {
+        Cert cert = new Cert(null, der, CertType.SUB, CertStatus.VALID, privateKeyId, false, null, trackingId, null);
         if (!cert.isCa()) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
                     "BasicConstraints indicates non-CA certificate (cA=false or absent)");
@@ -88,7 +106,7 @@ public class Cert {
 
     public static Cert issuedLeaf(byte[] der, boolean pendingApproval) {
         Cert cert = new Cert(null, der, CertType.LEAF, pendingApproval ? CertStatus.PENDING : CertStatus.VALID, null,
-                false, null, null);
+                false, null, null, null);
         if (cert.isCa()) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
                     "End-entity certificate expected, but BasicConstraints cA=true");
@@ -97,8 +115,8 @@ public class Cert {
     }
 
     public static Cert restore(Long id, byte[] der, CertType certType, CertStatus status, PrivateKeyId privateKeyId,
-            boolean hidden, Instant createdAt, Revocation revocation) {
-        return new Cert(id, der, certType, status, privateKeyId, hidden, createdAt, revocation);
+            boolean hidden, Instant createdAt, String trackingId, Revocation revocation) {
+        return new Cert(id, der, certType, status, privateKeyId, hidden, createdAt, trackingId, revocation);
     }
 
     public void ensureCanIssue(CertType target, ValidityPeriod requested, Instant now) {
@@ -124,6 +142,29 @@ public class Cert {
         }
     }
 
+    public void ensureRenewable(CertType expected, Instant now) {
+        if (certType != expected) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "Certificate type does not match the renewal.")
+                .property("expected", expected.name())
+                .property("actual", certType.name());
+        }
+        if (getStatusAt(now) != CertStatus.VALID) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "Cannot renew invalid certificate.")
+                .property("certStatus", getStatusAt(now).name());
+        }
+    }
+
+    public ValidityPeriod renewalValidity(RenewalOptions options, Instant now) {
+        return options.validity(now, getValidityPeriod());
+    }
+
+    public CertificateTemplate renewalTemplate(Cert issuer, SubjectPublicKey subjectKey, ValidityPeriod validity,
+            DistributionPoints distributionPoints) {
+        Extensions extensions = RenewalExtensions.of(holder.getExtensions(), getAuthorityKeyId(),
+                issuer.getSubjectKeyId(), subjectKey.keyIdentifier(), distributionPoints);
+        return new CertificateTemplate(issuer.getSubjectDn(), getSubjectDn(), subjectKey, validity, extensions);
+    }
+
     public Cert revoke(CertType expected, CrlReason reason, Instant now) {
         if (certType == CertType.ROOT) {
             throw new CoreException(ErrorCode.CERT_REVOKE_ROOT_FORBIDDEN, "Root certificates cannot be revoked.");
@@ -138,7 +179,7 @@ public class Cert {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "Can not revoke certificate").property("certStatus",
                     current.name());
         }
-        return new Cert(id, der, certType, CertStatus.REVOKED, privateKeyId, hidden, createdAt,
+        return new Cert(id, der, certType, CertStatus.REVOKED, privateKeyId, hidden, createdAt, trackingId,
                 new Revocation(reason, now));
     }
 
@@ -279,16 +320,20 @@ public class Cert {
     }
 
     public String getTrackingId() {
+        return trackingId;
+    }
+
+    private BasicConstraints basicConstraints() {
+        return BasicConstraints.fromExtensions(holder.getExtensions());
+    }
+
+    private static String sha256Hex(byte[] der) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(der));
         }
         catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is not available", ex);
         }
-    }
-
-    private BasicConstraints basicConstraints() {
-        return BasicConstraints.fromExtensions(holder.getExtensions());
     }
 
     private static X509CertificateHolder parse(byte[] der) {

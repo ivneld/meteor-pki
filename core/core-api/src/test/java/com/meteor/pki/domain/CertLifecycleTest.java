@@ -12,6 +12,11 @@ import com.meteor.pki.enums.CertType;
 import com.meteor.pki.enums.CrlReason;
 import com.meteor.pki.support.error.CoreException;
 import com.meteor.pki.support.error.ErrorCode;
+import org.bouncycastle.asn1.x509.AuthorityInformationAccess;
+import org.bouncycastle.asn1.x509.CRLDistPoint;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.cert.X509CertificateHolder;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +45,15 @@ class CertLifecycleTest {
         assertThatThrownBy(() -> root.ensureCanIssue(CertType.LEAF,
                 new ValidityPeriod(NOW.minusSeconds(1), NOW.plus(Duration.ofDays(1))), NOW))
             .hasMessage("Requested validity is outside the issuer's validity period.");
+    }
+
+    @Test
+    void validityPeriodIsKeptInWholeSeconds() {
+        ValidityPeriod period = new ValidityPeriod(NOW.plusMillis(700), NOW.plusSeconds(10).plusMillis(300));
+
+        assertThat(period.notBefore()).isEqualTo(NOW);
+        assertThat(period.length()).isEqualTo(Duration.ofSeconds(10));
+        assertThat(period.contains(new ValidityPeriod(NOW, NOW.plusSeconds(10)))).isTrue();
     }
 
     @Test
@@ -77,9 +91,82 @@ class CertLifecycleTest {
         assertThatThrownBy(() -> Revocation.reasonOf(7)).hasMessage("Unsupported CRL reason code.");
     }
 
+    @Test
+    void renewalKeepsTheSubjectAndExtensionsWithANewKey() throws Exception {
+        Cert root = issueRoot(rootKeys, "CN=Root");
+        Cert sub = saved(issueSub(root, rootKeys, subKeys));
+        KeyPair newKeys = TestKeys.ecP256();
+
+        ValidityPeriod validity = sub.renewalValidity(new RenewalOptions(2, null), NOW);
+        Cert renewed = renew(sub, root, rootKeys, newKeys, validity);
+
+        X509CertificateHolder original = new X509CertificateHolder(sub.getDer());
+        X509CertificateHolder holder = new X509CertificateHolder(renewed.getDer());
+        assertThat(validity.notBefore()).isEqualTo(NOW.minus(Duration.ofDays(2)));
+        assertThat(validity.length()).isEqualTo(sub.getValidityPeriod().length());
+        assertThat(renewed.getSubjectDn()).isEqualTo(sub.getSubjectDn());
+        assertThat(renewed.getSubjectKeyId()).isEqualTo(TestKeys.publicKey(newKeys).keyIdentifier())
+            .isNotEqualTo(sub.getSubjectKeyId());
+        assertThat(renewed.getAuthorityKeyId()).isEqualTo(root.getSubjectKeyId());
+        assertThat(renewed.getTrackingId()).isEqualTo(sub.getTrackingId());
+        assertThat(renewed.getPrivateKeyId()).isEqualTo(new PrivateKeyId("k-renewed"));
+        assertThat(renewed.getPathLenConstraint()).isZero();
+        assertThat(holder.getExtension(Extension.keyUsage)).isEqualTo(original.getExtension(Extension.keyUsage));
+        assertThat(holder.getExtension(Extension.cRLDistributionPoints))
+            .isEqualTo(original.getExtension(Extension.cRLDistributionPoints));
+        assertThat(sub.renewalValidity(new RenewalOptions(0, ValidityDuration.from("P1Y")), NOW).notAfter())
+            .isEqualTo(Instant.parse("2027-10-13T00:00:00Z"));
+        assertThatThrownBy(() -> Cert.renewedSubCa(sub.getDer(), new PrivateKeyId("k-same"), sub))
+            .hasMessage("Renewed certificate must keep the subject and use a new key");
+    }
+
+    @Test
+    void renewalUnderANewIssuerPointsDefaultDistributionPointsToIt() throws Exception {
+        Cert root = issueRoot(rootKeys, "CN=Root");
+        Cert sub = saved(issueSub(root, rootKeys, subKeys));
+        KeyPair nextRootKeys = TestKeys.ecP256();
+        Cert nextRoot = issueRoot(nextRootKeys, "CN=Root");
+
+        Cert renewed = renew(sub, nextRoot, nextRootKeys, TestKeys.ecP256(),
+                sub.renewalValidity(new RenewalOptions(0, ValidityDuration.from("P1Y")), NOW));
+
+        X509CertificateHolder holder = new X509CertificateHolder(renewed.getDer());
+        String issuerSki = nextRoot.getSubjectKeyId().toHex();
+        assertThat(renewed.getAuthorityKeyId()).isEqualTo(nextRoot.getSubjectKeyId());
+        assertThat(CRLDistPoint.fromExtensions(holder.getExtensions()).getDistributionPoints()[0].getDistributionPoint()
+            .getName()
+            .toString()).contains("http://dp.example.com/api/crl/" + issuerSki + ".crl");
+        AuthorityInformationAccess aia = AuthorityInformationAccess.fromExtensions(holder.getExtensions());
+        assertThat(aia.getAccessDescriptions()[0].getAccessLocation()).isEqualTo(new GeneralName(
+                GeneralName.uniformResourceIdentifier, "http://dp.example.com/api/ca/" + issuerSki + ".crt"));
+        assertThat(aia.getAccessDescriptions()[1].getAccessLocation())
+            .isEqualTo(new GeneralName(GeneralName.uniformResourceIdentifier, "http://ocsp.example.com"));
+    }
+
+    @Test
+    void onlyValidCertificatesOfTheExpectedTypeAreRenewed() {
+        Cert root = issueRoot(rootKeys, "CN=Root");
+        Cert sub = saved(issueSub(root, rootKeys, subKeys));
+
+        sub.ensureRenewable(CertType.SUB, NOW);
+        assertThatThrownBy(() -> root.ensureRenewable(CertType.SUB, NOW))
+            .hasMessage("Certificate type does not match the renewal.");
+        assertThatThrownBy(() -> sub.revoke(CertType.SUB, CrlReason.SUPERSEDED, NOW).ensureRenewable(CertType.SUB, NOW))
+            .hasMessage("Cannot renew invalid certificate.");
+        assertThatThrownBy(() -> new RenewalOptions(-1, null))
+            .hasMessage("activationStartDaysAgo must not be negative.");
+    }
+
+    private Cert renew(Cert original, Cert issuer, KeyPair issuerKeys, KeyPair newKeys, ValidityPeriod validity) {
+        CertificateTemplate template = original.renewalTemplate(issuer, TestKeys.publicKey(newKeys), validity, DP);
+        TbsCertificate tbs = template.toTbs(SerialNumber.random(new SecureRandom()), TestKeys.ecdsa());
+        return Cert.renewedSubCa(tbs.withSignature(TestKeys.sign(tbs, issuerKeys), issuer.getSubjectPublicKey()),
+                new PrivateKeyId("k-renewed"), original);
+    }
+
     private static Cert saved(Cert cert) {
         return Cert.restore(10L, cert.getDer(), cert.getCertType(), cert.getStatus(), cert.getPrivateKeyId(), false,
-                NOW, null);
+                NOW, cert.getTrackingId(), null);
     }
 
     private static Cert issueRoot(KeyPair keys, String subjectDn) {

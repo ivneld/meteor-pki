@@ -146,7 +146,66 @@ class CertIssuanceUseCaseIT extends ContextTest {
     }
 
     @Test
-    void issuanceMustStayWithinTheIssuerValidity() {
+    void subCaRenewalUsesANewKeyAndSupersedesTheOriginal() throws Exception {
+        CertProfile rootProfile = profile("renew-root", CertType.ROOT, null, "EC-P-384");
+        CertProfile subProfile = profile("renew-sub", CertType.SUB, 0, "RSA-2048");
+        Cert root = certIssuanceUseCase.issueRoot(rootCommand(rootProfile, "CN=Renew Root"));
+        Cert sub = certIssuanceUseCase.issueSubCa(subCommand(subProfile, root.getSubjectKeyId(), "CN=Renew Sub"));
+
+        Cert renewed = certIssuanceUseCase.renewSubCa(new SubCaRenewCommand(sub.getSerialNumber(),
+                root.getSubjectKeyId(), 0, ValidityDuration.from("P2Y"), true, false));
+
+        Cert original = certReader.get(root.getSubjectKeyId(), sub.getSerialNumber());
+        assertThat(renewed.getSubjectDn()).isEqualTo(sub.getSubjectDn());
+        assertThat(renewed.getSubjectKeyId()).isNotEqualTo(sub.getSubjectKeyId());
+        assertThat(renewed.getPrivateKeyId()).isNotEqualTo(sub.getPrivateKeyId());
+        assertThat(renewed.getKeyAlgorithm().value()).isEqualTo("RSA-2048");
+        assertThat(renewed.getTrackingId()).isEqualTo(sub.getTrackingId());
+        assertThat(renewed.getNotAfter())
+            .isEqualTo(renewed.getNotBefore().atZone(java.time.ZoneOffset.UTC).plusYears(2).toInstant());
+        assertThat(original.getStatus()).isEqualTo(CertStatus.REVOKED);
+        assertThat(original.getRevocation().reason()).isEqualTo(CrlReason.SUPERSEDED);
+        validateChain(root, renewed);
+        Cert leaf = certIssuanceUseCase
+            .issueLeaf(leafCommand(leafProfile("renew-leaf", false), renewed.getSubjectKeyId(), TestKeys.ecP256()));
+        validateChain(root, renewed, leaf);
+        assertThatThrownBy(() -> certIssuanceUseCase
+            .renewSubCa(new SubCaRenewCommand(sub.getSerialNumber(), root.getSubjectKeyId(), 0, null, false, false)))
+            .hasMessage("Cannot renew invalid certificate.");
+        assertThatThrownBy(() -> certIssuanceUseCase
+            .renewSubCa(new SubCaRenewCommand(root.getSerialNumber(), root.getSubjectKeyId(), 0, null, false, false)))
+            .hasMessage("Certificate type does not match the renewal.");
+    }
+
+    @Test
+    void latestIssuerInTheLineageSignsTheRenewal() throws Exception {
+        CertProfile rootProfile = profile("lineage-root", CertType.ROOT, null, "EC-P-256");
+        CertProfile midProfile = profile("lineage-mid", CertType.SUB, 1, "EC-P-256");
+        CertProfile issuingProfile = profile("lineage-issuing", CertType.SUB, 0, "EC-P-256");
+        Cert root = certIssuanceUseCase.issueRoot(rootCommand(rootProfile, "CN=Lineage Root"));
+        Cert mid = certIssuanceUseCase.issueSubCa(subCommand(midProfile, root.getSubjectKeyId(), "CN=Lineage Mid"));
+        Cert issuing = certIssuanceUseCase
+            .issueSubCa(new SubCaIssueCommand(issuingProfile.getId(), DistinguishedName.of("CN=Lineage Issuing"),
+                    mid.getSubjectKeyId(), List.of(), true, List.of(), List.of(), ValidityDuration.from("P2Y"), null));
+        Cert renewedMid = certIssuanceUseCase.renewSubCa(new SubCaRenewCommand(mid.getSerialNumber(),
+                root.getSubjectKeyId(), 0, ValidityDuration.from("P4Y"), false, false));
+
+        Cert sameIssuer = certIssuanceUseCase.renewSubCa(new SubCaRenewCommand(issuing.getSerialNumber(),
+                mid.getSubjectKeyId(), 0, ValidityDuration.from("P1Y"), false, false));
+        Cert latestIssuer = certIssuanceUseCase.renewSubCa(new SubCaRenewCommand(issuing.getSerialNumber(),
+                mid.getSubjectKeyId(), 0, ValidityDuration.from("P1Y"), false, true));
+
+        assertThat(sameIssuer.getAuthorityKeyId()).isEqualTo(mid.getSubjectKeyId());
+        assertThat(latestIssuer.getAuthorityKeyId()).isEqualTo(renewedMid.getSubjectKeyId());
+        assertThat(new String(latestIssuer.getDer(), java.nio.charset.StandardCharsets.ISO_8859_1))
+            .contains("/api/crl/" + renewedMid.getSubjectKeyId().toHex() + ".crl")
+            .doesNotContain(mid.getSubjectKeyId().toHex() + ".crl");
+        validateChain(root, mid, sameIssuer);
+        validateChain(root, renewedMid, latestIssuer);
+    }
+
+    @Test
+    void issuanceAndRenewalMustStayWithinTheIssuerValidity() {
         CertProfile rootProfile = profile("window-root", CertType.ROOT, null, "EC-P-256");
         CertProfile subProfile = profile("window-sub", CertType.SUB, 0, "EC-P-256");
         Cert root = certIssuanceUseCase.issueRoot(new RootIssueCommand(rootProfile.getId(),
@@ -163,12 +222,20 @@ class CertIssuanceUseCaseIT extends ContextTest {
                 DistinguishedName.of("CN=Too Early"), root.getSubjectKeyId(), List.of(), false, List.of(), List.of(),
                 ValidityDuration.from("P1Y"), root.getNotBefore().minusSeconds(60))))
             .hasMessage("Requested validity is outside the issuer's validity period.");
+        assertThatThrownBy(() -> certIssuanceUseCase.renewSubCa(new SubCaRenewCommand(sub.getSerialNumber(),
+                root.getSubjectKeyId(), 0, ValidityDuration.from("P4Y"), false, false)))
+            .hasMessage("Requested validity is outside the issuer's validity period.");
+        assertThatThrownBy(() -> certIssuanceUseCase
+            .renewSubCa(new SubCaRenewCommand(sub.getSerialNumber(), root.getSubjectKeyId(), 1, null, false, false)))
+            .hasMessage("Requested validity is outside the issuer's validity period.");
         assertThatThrownBy(
                 () -> certIssuanceUseCase.issueLeaf(new LeafIssueCommand(leafProfile("window-leaf", false).getId(),
                         DistinguishedName.of("CN=device"), sub.getSubjectKeyId(), TestKeys.publicKey(TestKeys.ecP256()),
                         List.of(), false, List.of(), List.of(), ValidityDuration.from("P1Y"),
                         sub.getNotAfter().minus(java.time.Duration.ofDays(30)))))
             .hasMessage("Requested validity is outside the issuer's validity period.");
+        assertThat(certReader.get(root.getSubjectKeyId(), sub.getSerialNumber()).getStatus())
+            .isEqualTo(CertStatus.VALID);
     }
 
     @Test
