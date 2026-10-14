@@ -1,6 +1,6 @@
 # REST API 호출 시나리오
 
-인증서 프로파일을 만들고 Root CA → Sub CA → Leaf 순서로 체인을 만든 뒤, 조회·다운로드·오류 응답까지 확인하는 순서다. 같은 순서를 실행하는
+인증서 프로파일을 만들고 Root CA → Sub CA → Leaf 순서로 체인을 만든 뒤, 조회·다운로드, Sub CA 갱신·폐기, 오류 응답까지 확인하는 순서다. 같은 순서를 실행하는
 스크립트 [`scripts/api-scenario.sh`](../scripts/api-scenario.sh) 가 있다. 스크립트는 각 응답을 `openssl` 로 검증하고, 기대와 다르면 멈춘다.
 
 ```bash
@@ -19,6 +19,7 @@ scripts/api-scenario.sh http://host:port   # 다른 서버
 | 프로파일 id | 3 단계 응답의 `id` |
 | Root SKI | 7 단계 CA 목록의 `skiHex`. 하위 인증서를 발급할 때 `akiHex` 로 넘긴다 |
 | Sub CA SKI | 8 단계 응답 인증서의 SKI 확장, 또는 CA 목록 |
+| Sub CA 일련번호 | `openssl x509 -in sub.pem -noout -serial`, 또는 CA 단건 조회의 `serialNumberHex` |
 | Leaf 공개키 | `openssl ecparam -name prime256v1 -genkey -noout -out device.key` 후 `openssl pkey -in device.key -pubout -outform der \| base64` |
 
 ## 1. 기본 EKU 확인
@@ -199,7 +200,64 @@ Content-Type: application/pkix-cert
 Content-Disposition: attachment; filename="4903BF....der"
 ```
 
-## 15. 오류 응답
+## 15. Sub CA 갱신
+
+원본 인증서를 `(akiHex, serialNumberHex)` 로 가리킨다. `akiHex` 는 원본의 발급자(Root) SKI 다. 서버는 원본과 같은 키 알고리즘으로
+**새 키**를 만들고, 주체 DN 과 확장은 원본에서 가져와 AKI·SKI 만 새로 쓴다. `revokeOriginalCertificate` 가 true 면 원본을
+`SUPERSEDED` 로 폐기한다. `validityPeriod` 를 빼면 원본과 같은 길이, `activationStartDaysAgo` 는 시작 시각을 오늘에서 며칠 앞당긴다.
+
+```bash
+curl -X POST localhost:8080/api/certificates/sub-ca/renewal -H 'Content-Type: application/json' -d '{
+  "serialNumberHex":"{Sub CA 일련번호}","akiHex":"{Root SKI}","activationStartDaysAgo":0,"validityPeriod":"P5Y",
+  "revokeOriginalCertificate":true,"useLatestIssuer":false}'
+```
+
+```json
+{"x509CertificateDer":"MIICGDCCAZ6gAwIBAgIUQ..."}
+```
+
+갱신한 인증서의 SKI 는 원본과 다르고, CRL DP 는 그대로 발급자(Root) SKI 를 가리킨다. `useLatestIssuer` 가 true 면 원본 발급자가
+갱신되어 키가 바뀌었더라도 그 계보의 최신 CA 가 서명하고, 기본 CRL·발급자 인증서 주소도 새 발급자의 SKI 로 바뀐다.
+
+## 16. 갱신 결과 확인
+
+CA 목록에는 같은 주체의 CA 가 둘 보인다. 원본은 `REVOKED`, 갱신본은 `VALID` 다. 갱신한 Sub CA 의 SKI 를 `akiHex` 로 넘겨 Leaf 를 발급하면
+Root → 갱신한 Sub CA → Leaf 로 검증된다.
+
+```
+D6AF0AF8...  REVOKED
+F318327D...  VALID
+```
+
+```bash
+openssl verify -CAfile root.pem -untrusted sub-renewed.pem leaf-renewed.pem
+```
+
+## 17. Sub CA 폐기
+
+대상은 발급자 SKI(경로)와 일련번호로 가리키고, `reason` 은 RFC 5280 CRLReason 코드다(0 unspecified, 1 keyCompromise,
+2 cACompromise, 3 affiliationChanged, 4 superseded, 5 cessationOfOperation, 6 certificateHold, 9 privilegeWithdrawn, 10 aACompromise).
+성공하면 빈 본문의 200 이다.
+
+```bash
+curl -X POST 'localhost:8080/api/certificates/sub-ca/{Root SKI}/revocation' -H 'Content-Type: application/json' \
+     -d '{"serialNumberHex":"{폐기할 Sub CA 일련번호}","reason":5}'
+```
+
+폐기한 Sub CA 는 더 이상 발급자로 찾을 수 없어 그 SKI 로 발급을 요청하면 404 다. 이미 발급한 하위 인증서는 그대로 둔다.
+
+## 18. 발급·갱신 기간 규칙
+
+하위 인증서의 유효기간은 발급자 인증서의 유효기간 안에 있어야 한다. 20 년짜리 Root 아래에 2040 년부터 10 년짜리 Sub CA 를 요청하거나,
+Sub CA 를 25 년으로 갱신하면 키를 만들기 전에 거절한다.
+
+```json
+{"title":"PKI-ERROR","status":400,"detail":"Requested validity is outside the issuer's validity period.",
+ "errorCode":"CERT_INVALID_INPUT","skiHex":"{Root SKI}","notBefore":"2040-01-01T00:00:00Z","notAfter":"2050-01-01T00:00:00Z",
+ "issuerNotBefore":"2026-10-14T07:58:23Z","issuerNotAfter":"2046-10-14T07:58:23Z"}
+```
+
+## 19. 오류 응답
 
 오류는 모두 `title: PKI-ERROR` 인 ProblemDetail 이고, 클라이언트는 `errorCode` 로 분기한다.
 
@@ -213,6 +271,13 @@ Content-Disposition: attachment; filename="4903BF....der"
 | 없는 발급자 SKI | 404 | `CERT_RESOURCE_NOT_FOUND` | Failed to find a CA certificate matching the AKI. |
 | pathLen 0 인 Sub CA 아래 CA 발급 | 400 | `CERT_INVALID_INPUT` | Issuer certificate cannot issue: pathLenConstraint is 0. |
 | 프로파일보다 긴 `validityPeriod` | 400 | `CERT_INVALID_INPUT` | Validity is outside allowed policy range. |
+| 발급자의 유효기간을 벗어나는 발급·갱신 | 400 | `CERT_INVALID_INPUT` | Requested validity is outside the issuer's validity period. |
+| 폐기·만료된 Sub CA 갱신 | 400 | `CERT_INVALID_INPUT` | Cannot renew invalid certificate. |
+| Root 를 Sub CA 갱신으로 요청 | 400 | `CERT_INVALID_INPUT` | Certificate type does not match the renewal. |
+| Root 폐기 | 400 | `CERT_REVOKE_ROOT_FORBIDDEN` | Root certificates cannot be revoked. |
+| 이미 폐기한 인증서 폐기 | 400 | `CERT_INVALID_INPUT` | Can not revoke certificate |
+| 없는 CRLReason 코드(7) | 400 | `CERT_INVALID_INPUT` | Unsupported CRL reason code. |
+| 폐기한 Sub CA 로 발급 | 404 | `CERT_RESOURCE_NOT_FOUND` | Failed to find a CA certificate matching the AKI. |
 | 프로파일과 다른 키 알고리즘의 공개키 | 400 | `CERT_INVALID_INPUT` | The subject public key does not match the profile's key spec. |
 | PEM 이 아닌 CSR | 400 | `CERT_INVALID_INPUT` | Invalid PEM format |
 | 지원하지 않는 다운로드 형식 | 400 | `CERT_INVALID_INPUT` | Unsupported certificate download format. |

@@ -59,8 +59,8 @@ support.web    (Spring MVC 표현 계층)
 
 | 접두어 | 영역 | 현재 코드 |
 |---|---|---|
-| `COMMON` | 특정 도메인에 속하지 않는 오류, Spring MVC 표준 오류, VO 검증 실패 | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404, `METHOD_NOT_ALLOWED` 405, `UNSUPPORTED_MEDIA_TYPE` 415, `SYSTEM_ERROR` 500, `NOT_IMPLEMENTED` 501 |
-| `CERT` | 인증서 발급·조회, 인증서 값(DN, 유효기간, 키, CSR) | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404, `OPERATION_FAILED` 400, `SIGN_FAILED` 500 |
+| `COMMON` | 특정 도메인에 속하지 않는 오류, Spring MVC 표준 오류, VO 검증 실패 | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404, `METHOD_NOT_ALLOWED` 405, `UNSUPPORTED_MEDIA_TYPE` 415, `CONFLICT` 409(낙관적 잠금 충돌), `SYSTEM_ERROR` 500, `NOT_IMPLEMENTED` 501 |
+| `CERT` | 인증서 발급·갱신·폐기·조회, 인증서 값(DN, 유효기간, 키, CSR) | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404, `OPERATION_FAILED` 400, `SIGN_FAILED` 500, `REVOKE_ROOT_FORBIDDEN` 400 |
 | `PROFILE` | 인증서 프로파일, EKU | `INVALID_INPUT` 400, `RESOURCE_NOT_FOUND` 404 |
 | `STATS` ... | x509-ra 의 그 밖의 도메인 에러 | 구현할 때 옮긴다 |
 

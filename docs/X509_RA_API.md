@@ -28,17 +28,51 @@
 | CA 체인 | `POST /api/certificates/root`, `POST /api/certificates/sub-ca` | 구현 |
 | CA 조회·다운로드 | `GET /api/certificates/ca`, `GET /api/certificates/ca/{skiHex}`, `GET /api/certificates/{akiHex}/download` | 구현 |
 | Leaf 발급 | `POST /api/certificates/leaf/spki`, `POST /api/certificates/leaf/p10cr` | 구현 |
-| Sub CA 갱신 | `POST /api/certificates/sub-ca/renewal` | 501. x509-ra 에도 구현이 없다("Sub CA renewal API is not implemented yet.") |
+| Sub CA 갱신 | `POST /api/certificates/sub-ca/renewal` | 구현. 항상 새 키로 발급한다. x509-ra 에는 구현이 없다 |
+| Sub CA 폐기 | `POST /api/certificates/sub-ca/{akiHex}/revocation` | 구현. x509-ra 가 옮긴 뒤에 추가한 엔드포인트다 |
 | 그 밖의 엔드포인트 | Leaf 갱신·폐기, CRL, CMP, 키 합의·동기화, 배포용 TLS 번들, 통계 | 501 |
+
+### 발급·갱신 기간 규칙
+
+하위 인증서(Sub CA, Leaf)를 발급하거나 Sub CA 를 갱신할 때 요청한 유효기간 `[notBefore, notAfter]` 가 발급자 인증서의 유효기간 안에
+있어야 한다. 벗어나면 키를 만들기 전에 400 `CERT_INVALID_INPUT` "Requested validity is outside the issuer's validity period." 로
+거절한다. 응답의 `notBefore`·`notAfter`·`issuerNotBefore`·`issuerNotAfter` 에 두 기간이 들어 있다. 발급의 유효기간은 프로파일과 요청
+(`validityPeriod`, `notBefore`)으로, 갱신의 유효기간은 요청(`activationStartDaysAgo`, `validityPeriod`, 없으면 원본 인증서의 길이)으로
+정한다. 인증서에는 초 단위로 들어가므로 비교도 초 단위로 한다. 원본(x509-ra)은 이 검사를 하지 않아 발급자보다 오래 유효한 인증서를 발급할 수 있다.
+
+### Sub CA 갱신
+
+- 원본 인증서는 `(akiHex, serialNumberHex)` 로 찾는다. SUB 이고 지금 유효(`VALID`)해야 한다. ROOT 는 "Certificate type does not match
+  the renewal.", 폐기·만료된 인증서는 "Cannot renew invalid certificate." (400 `CERT_INVALID_INPUT`).
+- **키를 재사용하지 않는다.** 원본 인증서와 같은 키 알고리즘으로 새 키를 만들어 서명받는다. 요청의 `useExistingPublicKey` 필드는 없앴다
+  (보내도 무시한다).
+- 주체 DN 과 확장(기본 제약, 키 용도, EKU, 정책, SAN, CRL DP, AIA ...)은 원본 인증서에서 그대로 가져오고 AKI 와 SKI 만 새로 쓴다.
+- 발급자는 `useLatestIssuer=false` 면 원본의 AKI 와 같은 SKI 를 가진 VALID CA 다. `true` 면 그 발급자의 계보(`trackingId`)에서 가장 최근에
+  만든 VALID CA 다. 갱신한 인증서는 원본의 `trackingId` 를 이어받으므로 발급자가 갱신되어 키가 바뀌었어도 찾을 수 있다. 발급자가 바뀌면
+  기본 CRL DP(`{crlBase}/api/crl/{발급자 SKI}.crl`)와 기본 발급자 인증서 주소(`{caBase}/api/ca/{발급자 SKI}.crt`)를 새 발급자의 SKI 로 바꾼다.
+- 키 생성과 서명은 트랜잭션 밖에서 한다. 저장하는 트랜잭션에서 원본이 아직 갱신할 수 있는 상태인지 다시 확인하므로, 서명하는 사이에 원본이
+  폐기되면 갱신본을 저장하지 않는다(만든 키만 키 보관소에 남는다).
+- `revokeOriginalCertificate=true` 면 같은 트랜잭션에서 원본을 `SUPERSEDED` 로 폐기한다. 둘 중 하나가 실패하면 둘 다 저장하지 않는다.
+  `cert` 행에 낙관적 잠금(`version`)이 있어 같은 원본을 동시에 갱신·폐기하면 나중 요청은 409 `COMMON_CONFLICT` 로 실패한다.
+
+### Sub CA 폐기
+
+- 대상은 `(akiHex, serialNumberHex)` 로 찾고 없으면 404 `CERT_RESOURCE_NOT_FOUND` "Certificate not found.".
+- ROOT 는 400 `CERT_REVOKE_ROOT_FORBIDDEN` "Root certificates cannot be revoked.". LEAF 는 400 `CERT_INVALID_INPUT` "Certificate type
+  does not match the revocation.". 지금 `VALID` 나 `PENDING` 이 아니면 400 `CERT_INVALID_INPUT` "Can not revoke certificate".
+- `reason` 은 RFC 5280 CRLReason 코드(0~6, 8~10)다. 없는 코드는 "Unsupported CRL reason code.", `removeFromCRL`(8) 은 delta CRL 에서만
+  쓰는 값이라 "removeFromCRL cannot be used as a revocation reason." 로 거절한다(원본은 저장한다).
+- 폐기한 시각과 사유를 `cert` 행(`cert_status`, `revoked_at`, `revocation_reason`)에 남긴다. 원본은 별도 `revocation_detail` 테이블에 둔다.
+  폐기한 CA 는 더 이상 발급자로 찾을 수 없다(404 "Failed to find a CA certificate matching the AKI."). 이미 발급한 하위 인증서는 그대로 둔다.
 
 ### 구현 구조
 
 | 역할 | 코드 |
 |---|---|
-| 규칙 | 프로파일 `CertProfile`(종류별 규칙, 유효기간, 확장), 인증서 `Cert`(발급 자격, 상태), 이름·OID 중복 `CertProfileNamePolicy`·`EkuRegistrationPolicy`, 값 객체(`ValidityDuration`, `SubjectAltNameTemplate`, `CertificationRequest` ...) |
-| 흐름 | `CertProfileUseCase`(EKU 확인 + 프로파일 저장), `CertIssuanceUseCase`(프로파일·발급자 확인 → 키 생성·서명 → 저장) |
+| 규칙 | 프로파일 `CertProfile`(종류별 규칙, 유효기간, 확장), 인증서 `Cert`(발급 자격과 발급자 기간, 갱신, 폐기, 상태), 이름·OID 중복 `CertProfileNamePolicy`·`EkuRegistrationPolicy`, 값 객체(`ValidityDuration`, `SubjectAltNameTemplate`, `CertificationRequest` ...) |
+| 흐름 | `CertProfileUseCase`(EKU 확인 + 프로파일 저장), `CertIssuanceUseCase`(프로파일·발급자 확인 → 키 생성·서명 → 저장, Sub CA 갱신은 원본 폐기까지 한 트랜잭션), Sub CA 폐기는 `CertWriter.revoke` 하나 |
 | 키 보관과 서명 | `clients/client-crypto` 의 `CryptoClient`. HSM/KMS 자리라 외부 시스템으로 다루며 트랜잭션 밖에서 부른다. 개인키는 DB 에 두지 않고 키 id 만 저장한다. `client.crypto.key-dir` 이 있으면 암호화 PKCS#8 파일, 없으면(local) 메모리 |
-| 저장 | `cert_profile`(+ 키 용도, EKU, 정책 OID, OCSP 컬렉션 테이블), `extended_key_usage`, `cert`(DER + 조회 컬럼, `(aki, serial_number)` unique) |
+| 저장 | `cert_profile`(+ 키 용도, EKU, 정책 OID, OCSP 컬렉션 테이블), `extended_key_usage`, `cert`(DER + 조회 컬럼, `(aki, serial_number)` unique, 계보 `tracking_id`, 폐기 시각·사유) |
 
 ### 구현에서 원본과 다른 점
 
@@ -49,7 +83,7 @@
 - **RSA 서명 알고리즘 식별자.** 원본은 OID 만 넣는다. 여기는 RFC 4055 대로 NULL 파라미터를 붙인다. ECDSA, ML-DSA, Ed448 은 원본과 같다.
 - **EKU OID 형식 오류.** 원본은 프로파일 생성에서 형식이 틀린 EKU OID 를 errorCode 없는 400 으로 거절한다. 여기는 등록된 EKU 에서 찾지 못한
   것으로 보아 `PROFILE_INVALID_INPUT` "Unknown EKU OID." 다.
-- **하지 않는 일.** 발급 요청 로그(`cert_issue_request`, 통계용), 승인 요청 기록(`cert_approval_request`)과 승인·반려·만료 처리, CA
+- **하지 않는 일.** CA 폐기·갱신 후의 CRL 발행과 폐기 웹훅 이벤트, 발급 요청 로그(`cert_issue_request`, 통계용), 승인 요청 기록(`cert_approval_request`)과 승인·반려·만료 처리, CA
   발급 직후의 첫 CRL 발행, 웹훅 이벤트, 인증서 설명(`certDescription` 은 항상 빈 값), 숨김 관리, 키 레지스트리 테이블. 승인이 필요한 Leaf 는
   서명까지 하고 `PENDING` 으로 저장만 한다.
 - **에러 코드.** 원본에서 값 객체가 던지던 `CERT_INVALID_INPUT`(DomainErrorCode)도 같은 코드로 옮겼다. 원본과 같이 `detail` 에 구체적인
@@ -104,6 +138,7 @@ x509-ra 의 `GlobalExceptionHandler` 와 같은 모양이다.
 | POST | `/api/certificates/root` | `RootIssuanceRequest` | PEM 문자열 (`application/x-pem-file`) | ISSUE_CA |
 | POST | `/api/certificates/sub-ca` | `SubCaIssuanceRequest` | `SubCaIssuanceResponse` | ISSUE_CA |
 | POST | `/api/certificates/sub-ca/renewal` | `SubCaRenewalRequest` | `SubCaRenewalResponse` | - |
+| POST | `/api/certificates/sub-ca/{akiHex}/revocation` | `RevocationRequest` | 빈 본문 | REVOKE |
 
 leaf 발급은 프로파일의 승인 정책을 따른다(`ApprovalStrategy.FOLLOW_PROFILE`). Root·Sub CA 발급·갱신 후에는 발급 이벤트를 발행한다.
 
@@ -181,7 +216,7 @@ Points 확장에 `{CRL DP base URL}{pki-services.dp.crl-dp-path}/{issuerSki}.crl
 | `P10crIssuanceRequest` | `p10crPem`*, `certProfileId`*, `akiHex`*, `crlDps`, `includeDefaultCrlDp`, `aiaCaIssuers`, `ocspUris`, `validityPeriod`, `notBefore` |
 | `RootIssuanceRequest` | `certProfileId`*, `subjectDn`*, `validityPeriod`, `crlDps`, `ocspUris`, `notBefore`(비면 현재 시각) |
 | `SubCaIssuanceRequest` | `certProfileId`*, `subjectDn`*, `akiHex`*, `crlDps`, `includeDefaultCrlDp`, `aiaCaIssuers`, `ocspUris`, `validityPeriod`, `notBefore` |
-| `SubCaRenewalRequest` | `serialNumberHex`*, `akiHex`*, `activationStartDaysAgo`(≥0), `validityPeriod`(빈 값 불가), `useExistingPublicKey`*, `revokeOriginalCertificate`*, `useLatestIssuer`* |
+| `SubCaRenewalRequest` | `serialNumberHex`*, `akiHex`*(원본 인증서의 AKI), `activationStartDaysAgo`(≥0), `validityPeriod`(빈 문자열 불가, 없으면 원본 길이), `revokeOriginalCertificate`*, `useLatestIssuer`* |
 | `RenewalRequest` | `serialNumberHex`*, `activationStartDaysAgo`(≥0), `revokeOriginalCertificate`(bool), `subjectPublicKeyInfoDer`(Base64), `validityPeriod` |
 | `RevocationRequest` | `serialNumberHex`*, `reason`*(RFC 5280 CRLReason 정수) |
 | `DownloadRequest` (쿼리) | `serialNumberHex`*, `format`(`pem`/`der`) |

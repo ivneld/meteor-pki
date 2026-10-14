@@ -106,7 +106,45 @@ curl -s -D - -o "$WORK/dl.der" "$BASE/api/certificates/$SUB_SKI/download?serialN
 cmp <(openssl x509 -in "$WORK/leaf-csr.pem" -outform der) "$WORK/dl.der" && echo "DER 다운로드가 발급 결과와 같다"
 curl -s "$BASE/api/certificates/$SUB_SKI/download?serialNumberHex=$SERIAL" | head -1
 
-step "15. 오류 응답"
+step "15. Sub CA 갱신 (새 키로 발급하고 원본은 SUPERSEDED 로 폐기)"
+SUB_SERIAL=$(openssl x509 -in "$WORK/sub.pem" -noout -serial | cut -d= -f2)
+expect_status 200 -X POST "$BASE/api/certificates/sub-ca/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$SUB_SERIAL\",\"akiHex\":\"$ROOT_SKI\",\"activationStartDaysAgo\":0,\"validityPeriod\":\"P5Y\",
+  \"revokeOriginalCertificate\":true,\"useLatestIssuer\":false}" \
+    | json "['x509CertificateDer']" | pem_from_der_b64 > "$WORK/sub-renewed.pem"
+RENEWED_SKI=$(openssl x509 -in "$WORK/sub-renewed.pem" -noout -ext subjectKeyIdentifier | tail -1 | tr -d ' :')
+openssl x509 -in "$WORK/sub-renewed.pem" -noout -subject -dates -ext crlDistributionPoints
+echo "원본 SKI=$SUB_SKI 갱신본 SKI=$RENEWED_SKI"
+[[ "$SUB_SKI" != "$RENEWED_SKI" ]] && echo "키를 재사용하지 않았다"
+openssl verify -CAfile "$WORK/root.pem" "$WORK/sub-renewed.pem"
+
+step "16. CA 목록에서 원본은 REVOKED, 갱신본은 VALID"
+expect_status 200 "$BASE/api/certificates/ca" | python3 -c "import sys,json
+for c in json.load(sys.stdin):
+    if c['subjectDn']=='CN=Scenario Issuing CA $RUN,O=Meteor,C=KR': print(c['skiHex'], c['certStatus'])"
+
+step "17. 갱신한 Sub CA 로 Leaf 발급"
+expect_status 200 -X POST "$BASE/api/certificates/leaf/spki" -H "$JSON" -d "{
+  \"subjectDn\":\"CN=www.example.com,O=Meteor\",\"akiHex\":\"$RENEWED_SKI\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
+  \"certProfileId\":$TLS_PROFILE,\"includeDefaultCrlDp\":true}" \
+    | json "['x509CertificateDer']" | pem_from_der_b64 > "$WORK/leaf-renewed.pem"
+openssl verify -CAfile "$WORK/root.pem" -untrusted "$WORK/sub-renewed.pem" "$WORK/leaf-renewed.pem"
+
+step "18. Sub CA 폐기 (reason 5 = cessationOfOperation)"
+expect_status 200 -X POST "$BASE/api/certificates/sub-ca" -H "$JSON" -d "{
+  \"certProfileId\":$SUB_PROFILE,\"subjectDn\":\"CN=Scenario Retired CA $RUN,O=Meteor,C=KR\",
+  \"akiHex\":\"$ROOT_SKI\",\"validityPeriod\":\"P1Y\"}" | json "['x509CertificateDer']" | pem_from_der_b64 > "$WORK/retired.pem"
+RETIRED_SERIAL=$(openssl x509 -in "$WORK/retired.pem" -noout -serial | cut -d= -f2)
+RETIRED_SKI=$(openssl x509 -in "$WORK/retired.pem" -noout -ext subjectKeyIdentifier | tail -1 | tr -d ' :')
+expect_status 200 -X POST "$BASE/api/certificates/sub-ca/$ROOT_SKI/revocation" -H "$JSON" \
+    -d "{\"serialNumberHex\":\"$RETIRED_SERIAL\",\"reason\":5}"
+echo "(빈 본문)"
+echo "- 폐기한 Sub CA 로는 발급할 수 없다:"
+expect_status 404 -X POST "$BASE/api/certificates/leaf/spki" -H "$JSON" -d "{
+  \"subjectDn\":\"CN=x\",\"akiHex\":\"$RETIRED_SKI\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
+  \"certProfileId\":$TLS_PROFILE}" | json "['detail']"
+
+step "19. 오류 응답"
 echo "- 같은 이름의 프로파일:"
 expect_status 400 -X POST "$BASE/api/profiles" -H "$JSON" -d "{
   \"policyName\":\"Root CA $RUN\",\"certType\":\"ROOT\",\"validityPeriod\":\"P20Y\",\"keyUsages\":[],
@@ -116,11 +154,27 @@ expect_status 404 -X POST "$BASE/api/certificates/root" -H "$JSON" \
     -d "{\"certProfileId\":$TLS_PROFILE,\"subjectDn\":\"CN=Wrong\"}" | json "['errorCode']"
 echo "- pathLenConstraint 0 인 Sub CA 아래 CA 발급:"
 expect_status 400 -X POST "$BASE/api/certificates/sub-ca" -H "$JSON" \
-    -d "{\"certProfileId\":$SUB_PROFILE,\"subjectDn\":\"CN=Too Deep\",\"akiHex\":\"$SUB_SKI\"}" | json "['detail']"
+    -d "{\"certProfileId\":$SUB_PROFILE,\"subjectDn\":\"CN=Too Deep\",\"akiHex\":\"$RENEWED_SKI\"}" | json "['detail']"
 echo "- 프로파일보다 긴 유효기간:"
 expect_status 400 -X POST "$BASE/api/certificates/leaf/spki" -H "$JSON" -d "{
-  \"subjectDn\":\"CN=x\",\"akiHex\":\"$SUB_SKI\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
+  \"subjectDn\":\"CN=x\",\"akiHex\":\"$RENEWED_SKI\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
   \"certProfileId\":$TLS_PROFILE,\"validityPeriod\":\"P2Y\"}" | json "['detail']"
+echo "- 상위 CA(Root 20년)의 유효기간을 넘는 Sub CA 발급 (2040 년부터 10년):"
+expect_status 400 -X POST "$BASE/api/certificates/sub-ca" -H "$JSON" -d "{
+  \"certProfileId\":$SUB_PROFILE,\"subjectDn\":\"CN=Too Long\",\"akiHex\":\"$ROOT_SKI\",
+  \"notBefore\":\"2040-01-01T00:00:00Z\"}" | json "['detail']"
+echo "- 상위 CA(Root 20년)의 유효기간을 넘는 갱신:"
+RENEWED_SERIAL=$(openssl x509 -in "$WORK/sub-renewed.pem" -noout -serial | cut -d= -f2)
+expect_status 400 -X POST "$BASE/api/certificates/sub-ca/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$RENEWED_SERIAL\",\"akiHex\":\"$ROOT_SKI\",\"activationStartDaysAgo\":0,
+  \"validityPeriod\":\"P25Y\",\"revokeOriginalCertificate\":false,\"useLatestIssuer\":false}" | json "['detail']"
+echo "- Root 폐기:"
+ROOT_SERIAL=$(openssl x509 -in "$WORK/root.pem" -noout -serial | cut -d= -f2)
+expect_status 400 -X POST "$BASE/api/certificates/sub-ca/$ROOT_SKI/revocation" -H "$JSON" \
+    -d "{\"serialNumberHex\":\"$ROOT_SERIAL\",\"reason\":1}" | json "['errorCode']"
+echo "- 이미 폐기한 Sub CA 폐기:"
+expect_status 400 -X POST "$BASE/api/certificates/sub-ca/$ROOT_SKI/revocation" -H "$JSON" \
+    -d "{\"serialNumberHex\":\"$RETIRED_SERIAL\",\"reason\":1}" | json "['detail']"
 echo "- 없는 발급자:"
 expect_status 404 -X POST "$BASE/api/certificates/leaf/spki" -H "$JSON" -d "{
   \"subjectDn\":\"CN=x\",\"akiHex\":\"00FF\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
