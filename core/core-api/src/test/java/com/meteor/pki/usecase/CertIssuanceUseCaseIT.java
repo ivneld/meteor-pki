@@ -14,6 +14,7 @@ import com.meteor.pki.ContextTest;
 import com.meteor.pki.domain.Cert;
 import com.meteor.pki.domain.CertProfile;
 import com.meteor.pki.domain.CertReader;
+import com.meteor.pki.domain.CertWriter;
 import com.meteor.pki.domain.CertificationRequest;
 import com.meteor.pki.domain.DistinguishedName;
 import com.meteor.pki.domain.KeyAlgorithm;
@@ -23,10 +24,16 @@ import com.meteor.pki.domain.TestKeys;
 import com.meteor.pki.domain.ValidityDuration;
 import com.meteor.pki.enums.CertStatus;
 import com.meteor.pki.enums.CertType;
+import com.meteor.pki.enums.CrlReason;
 import com.meteor.pki.enums.KeyUsage;
 import com.meteor.pki.support.error.CoreException;
 import com.meteor.pki.support.error.ErrorCode;
 import org.junit.jupiter.api.Test;
+
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -39,11 +46,17 @@ class CertIssuanceUseCaseIT extends ContextTest {
 
     private final CertReader certReader;
 
+    private final CertWriter certWriter;
+
+    private final PlatformTransactionManager transactionManager;
+
     CertIssuanceUseCaseIT(CertProfileUseCase certProfileUseCase, CertIssuanceUseCase certIssuanceUseCase,
-            CertReader certReader) {
+            CertReader certReader, CertWriter certWriter, PlatformTransactionManager transactionManager) {
         this.certProfileUseCase = certProfileUseCase;
         this.certIssuanceUseCase = certIssuanceUseCase;
         this.certReader = certReader;
+        this.certWriter = certWriter;
+        this.transactionManager = transactionManager;
     }
 
     @Test
@@ -156,6 +169,52 @@ class CertIssuanceUseCaseIT extends ContextTest {
                         List.of(), false, List.of(), List.of(), ValidityDuration.from("P1Y"),
                         sub.getNotAfter().minus(java.time.Duration.ofDays(30)))))
             .hasMessage("Requested validity is outside the issuer's validity period.");
+    }
+
+    @Test
+    void revokedSubCaCanNoLongerIssue() {
+        CertProfile rootProfile = profile("revoke-root", CertType.ROOT, null, "EC-P-256");
+        CertProfile subProfile = profile("revoke-sub", CertType.SUB, 0, "EC-P-256");
+        Cert root = certIssuanceUseCase.issueRoot(rootCommand(rootProfile, "CN=Revoke Root"));
+        Cert sub = certIssuanceUseCase.issueSubCa(subCommand(subProfile, root.getSubjectKeyId(), "CN=Revoke Sub"));
+
+        Cert revoked = certWriter.revoke(root.getSubjectKeyId(), sub.getSerialNumber(), CertType.SUB,
+                CrlReason.KEY_COMPROMISE);
+
+        assertThat(revoked.getStatus()).isEqualTo(CertStatus.REVOKED);
+        assertThat(certReader.get(root.getSubjectKeyId(), sub.getSerialNumber()).getRevocation())
+            .isEqualTo(revoked.getRevocation());
+        assertThatThrownBy(() -> certIssuanceUseCase
+            .issueLeaf(leafCommand(leafProfile("revoke-leaf", false), sub.getSubjectKeyId(), TestKeys.ecP256())))
+            .hasMessage("Failed to find a CA certificate matching the AKI.");
+        assertThatThrownBy(() -> certWriter.revoke(root.getSubjectKeyId(), root.getSerialNumber(), CertType.SUB,
+                CrlReason.KEY_COMPROMISE))
+            .isInstanceOf(CoreException.class)
+            .satisfies(e -> assertThat(((CoreException) e).getErrorCode())
+                .isEqualTo(ErrorCode.CERT_REVOKE_ROOT_FORBIDDEN));
+        assertThatThrownBy(() -> certWriter.revoke(root.getSubjectKeyId(), sub.getSerialNumber(), CertType.SUB,
+                CrlReason.KEY_COMPROMISE))
+            .hasMessage("Can not revoke certificate");
+    }
+
+    @Test
+    void concurrentRevocationOfTheSameCertificateIsRejected() {
+        CertProfile rootProfile = profile("lock-root", CertType.ROOT, null, "EC-P-256");
+        CertProfile subProfile = profile("lock-sub", CertType.SUB, 0, "EC-P-256");
+        Cert root = certIssuanceUseCase.issueRoot(rootCommand(rootProfile, "CN=Lock Root"));
+        Cert sub = certIssuanceUseCase.issueSubCa(subCommand(subProfile, root.getSubjectKeyId(), "CN=Lock Sub"));
+        TransactionTemplate outer = new TransactionTemplate(transactionManager);
+        TransactionTemplate inner = new TransactionTemplate(transactionManager);
+        inner.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        assertThatThrownBy(() -> outer.executeWithoutResult(status -> {
+            certReader.get(root.getSubjectKeyId(), sub.getSerialNumber());
+            inner.executeWithoutResult(other -> certWriter.revoke(root.getSubjectKeyId(), sub.getSerialNumber(),
+                    CertType.SUB, CrlReason.KEY_COMPROMISE));
+            certWriter.revoke(root.getSubjectKeyId(), sub.getSerialNumber(), CertType.SUB, CrlReason.SUPERSEDED);
+        })).isInstanceOf(OptimisticLockingFailureException.class);
+        assertThat(certReader.get(root.getSubjectKeyId(), sub.getSerialNumber()).getRevocation().reason())
+            .isEqualTo(CrlReason.KEY_COMPROMISE);
     }
 
     private CertProfile leafProfile(String name, boolean requireApproval) {

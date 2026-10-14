@@ -5,6 +5,7 @@ import java.util.stream.Stream;
 
 import com.meteor.pki.domain.CertProfileReader;
 import com.meteor.pki.domain.CertReader;
+import com.meteor.pki.domain.CertWriter;
 import com.meteor.pki.domain.EkuReader;
 import com.meteor.pki.domain.EkuWriter;
 import com.meteor.pki.support.web.ApiControllerAdvice;
@@ -53,7 +54,8 @@ class ApiContractTest {
         JsonMapper.Builder jsonMapper = JsonMapper.builder();
         JacksonConfig.customize(jsonMapper);
         mockMvc = MockMvcBuilders.standaloneSetup(new LeafIssuanceController(certIssuanceUseCase),
-                new CertManageController(), new CertQueryController(mock(CertReader.class), Clock.systemUTC()),
+                new CertManageController(mock(CertWriter.class)),
+                new CertQueryController(mock(CertReader.class), Clock.systemUTC()),
                 new RootIssuanceController(certIssuanceUseCase), new SubCaIssuanceController(certIssuanceUseCase),
                 new CrlController(), new CrlDistributionController(), new CmpController(), new KeyAgreementController(),
                 new KeySyncController(), new DeploymentTlsBundleController(),
@@ -114,6 +116,7 @@ class ApiContractTest {
                 Arguments.of("POST", "/api/certificates/root", "{}"),
                 Arguments.of("POST", "/api/certificates/sub-ca", "{}"),
                 Arguments.of("POST", "/api/certificates/sub-ca/renewal", "{}"),
+                Arguments.of("POST", "/api/certificates/sub-ca/0A/revocation", "{}"),
                 Arguments.of("POST", "/api/key-agreement/operate", "{}"),
                 Arguments.of("POST", "/internal/deployment/tls-bundle", "{}"),
                 Arguments.of("POST", "/api/profiles", "{}"), Arguments.of("POST", "/api/extended-key-usages", "{}"),

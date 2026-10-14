@@ -14,6 +14,7 @@ import java.util.Set;
 
 import com.meteor.pki.enums.CertStatus;
 import com.meteor.pki.enums.CertType;
+import com.meteor.pki.enums.CrlReason;
 import com.meteor.pki.enums.KeyUsage;
 import com.meteor.pki.enums.SignatureAlgorithm;
 import com.meteor.pki.support.error.CoreException;
@@ -47,8 +48,10 @@ public class Cert {
 
     private final Instant createdAt;
 
+    private final Revocation revocation;
+
     private Cert(Long id, byte[] der, CertType certType, CertStatus status, PrivateKeyId privateKeyId, boolean hidden,
-            Instant createdAt) {
+            Instant createdAt, Revocation revocation) {
         this.id = id;
         this.der = der.clone();
         this.holder = parse(der);
@@ -57,10 +60,11 @@ public class Cert {
         this.privateKeyId = privateKeyId;
         this.hidden = hidden;
         this.createdAt = createdAt;
+        this.revocation = revocation;
     }
 
     public static Cert issuedRoot(byte[] der, PrivateKeyId privateKeyId) {
-        Cert cert = new Cert(null, der, CertType.ROOT, CertStatus.VALID, privateKeyId, false, null);
+        Cert cert = new Cert(null, der, CertType.ROOT, CertStatus.VALID, privateKeyId, false, null, null);
         BasicConstraints basicConstraints = cert.basicConstraints();
         if (basicConstraints == null || !basicConstraints.isCA() || basicConstraints.getPathLenConstraint() != null) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "BasicConstraints must indicate an unconstrained CA");
@@ -74,7 +78,7 @@ public class Cert {
     }
 
     public static Cert issuedSubCa(byte[] der, PrivateKeyId privateKeyId) {
-        Cert cert = new Cert(null, der, CertType.SUB, CertStatus.VALID, privateKeyId, false, null);
+        Cert cert = new Cert(null, der, CertType.SUB, CertStatus.VALID, privateKeyId, false, null, null);
         if (!cert.isCa()) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
                     "BasicConstraints indicates non-CA certificate (cA=false or absent)");
@@ -84,7 +88,7 @@ public class Cert {
 
     public static Cert issuedLeaf(byte[] der, boolean pendingApproval) {
         Cert cert = new Cert(null, der, CertType.LEAF, pendingApproval ? CertStatus.PENDING : CertStatus.VALID, null,
-                false, null);
+                false, null, null);
         if (cert.isCa()) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
                     "End-entity certificate expected, but BasicConstraints cA=true");
@@ -93,8 +97,8 @@ public class Cert {
     }
 
     public static Cert restore(Long id, byte[] der, CertType certType, CertStatus status, PrivateKeyId privateKeyId,
-            boolean hidden, Instant createdAt) {
-        return new Cert(id, der, certType, status, privateKeyId, hidden, createdAt);
+            boolean hidden, Instant createdAt, Revocation revocation) {
+        return new Cert(id, der, certType, status, privateKeyId, hidden, createdAt, revocation);
     }
 
     public void ensureCanIssue(CertType target, ValidityPeriod requested, Instant now) {
@@ -118,6 +122,24 @@ public class Cert {
                 .property("issuerNotBefore", getNotBefore().toString())
                 .property("issuerNotAfter", getNotAfter().toString());
         }
+    }
+
+    public Cert revoke(CertType expected, CrlReason reason, Instant now) {
+        if (certType == CertType.ROOT) {
+            throw new CoreException(ErrorCode.CERT_REVOKE_ROOT_FORBIDDEN, "Root certificates cannot be revoked.");
+        }
+        if (certType != expected) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "Certificate type does not match the revocation.")
+                .property("expected", expected.name())
+                .property("actual", certType.name());
+        }
+        CertStatus current = getStatusAt(now);
+        if (current != CertStatus.VALID && current != CertStatus.PENDING) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "Can not revoke certificate").property("certStatus",
+                    current.name());
+        }
+        return new Cert(id, der, certType, CertStatus.REVOKED, privateKeyId, hidden, createdAt,
+                new Revocation(reason, now));
     }
 
     private CoreException notEligible(String message) {
@@ -166,6 +188,10 @@ public class Cert {
 
     public PrivateKeyId getPrivateKeyId() {
         return privateKeyId;
+    }
+
+    public Revocation getRevocation() {
+        return revocation;
     }
 
     public boolean isHidden() {

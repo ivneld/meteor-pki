@@ -4,6 +4,7 @@ import java.time.Instant;
 
 import com.meteor.pki.enums.CertStatus;
 import com.meteor.pki.enums.CertType;
+import com.meteor.pki.enums.CrlReason;
 import com.meteor.pki.enums.KeyAlgorithmSpec;
 import com.meteor.pki.enums.SignatureAlgorithm;
 import com.meteor.pki.support.storage.BaseEntity;
@@ -17,6 +18,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "cert",
@@ -72,6 +74,15 @@ public class CertEntity extends BaseEntity {
     @Column(nullable = false)
     private boolean hidden;
 
+    private Instant revokedAt;
+
+    @Version
+    private Long version;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private CrlReason revocationReason;
+
     @Lob
     @Basic(fetch = FetchType.EAGER)
     @Column(name = "cert_der", nullable = false)
@@ -102,6 +113,12 @@ public class CertEntity extends BaseEntity {
         this.der = der.clone();
     }
 
+    public void changeStatus(CertStatus status, Instant revokedAt, CrlReason revocationReason) {
+        this.status = status;
+        this.revokedAt = revokedAt;
+        this.revocationReason = revocationReason;
+    }
+
     public String getSerialNumber() {
         return serialNumber;
     }
@@ -124,6 +141,14 @@ public class CertEntity extends BaseEntity {
 
     public CertStatus getStatus() {
         return status;
+    }
+
+    public Instant getRevokedAt() {
+        return revokedAt;
+    }
+
+    public CrlReason getRevocationReason() {
+        return revocationReason;
     }
 
     public boolean isHidden() {

@@ -10,6 +10,7 @@ import com.meteor.pki.support.error.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
@@ -38,6 +39,13 @@ public class ApiControllerAdvice extends ResponseEntityExceptionHandler {
         ErrorCode errorCode = ErrorCode.INVALID_INPUT;
         ErrorCodeLogger.log(log, errorCode, "Invalid value: " + e.getMessage(), null);
         return ResponseEntity.status(errorCode.getStatus()).body(ProblemDetails.of(errorCode, e.getMessage()));
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ProblemDetail> handleOptimisticLocking(OptimisticLockingFailureException e) {
+        ErrorCode errorCode = ErrorCode.CONFLICT;
+        ErrorCodeLogger.log(log, errorCode, "Concurrent modification: " + e.getMessage(), null);
+        return ResponseEntity.status(errorCode.getStatus()).body(ProblemDetails.of(errorCode, null));
     }
 
     @ExceptionHandler(Exception.class)

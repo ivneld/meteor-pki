@@ -20,7 +20,12 @@ public class CertRepository {
 
     public Cert save(Cert cert) {
         if (!cert.isNew()) {
-            throw new IllegalStateException("Certificate status changes are not supported yet: " + cert.getId());
+            CertEntity entity = jpa.findById(cert.getId())
+                .orElseThrow(() -> new IllegalStateException("Certificate not found: " + cert.getId()));
+            Revocation revocation = cert.getRevocation();
+            entity.changeStatus(cert.getStatus(), revocation == null ? null : revocation.revokedAt(),
+                    revocation == null ? null : revocation.reason());
+            return toDomain(jpa.save(entity));
         }
         PrivateKeyId privateKeyId = cert.getPrivateKeyId();
         CertEntity entity = new CertEntity(cert.getSerialNumber().toHex(), cert.getIssuerDn().value(),
@@ -50,7 +55,8 @@ public class CertRepository {
     private static Cert toDomain(CertEntity entity) {
         return Cert.restore(entity.getId(), entity.getDer(), entity.getCertType(), entity.getStatus(),
                 entity.getPrivateKeyId() == null ? null : new PrivateKeyId(entity.getPrivateKeyId()), entity.isHidden(),
-                entity.getCreatedAt());
+                entity.getCreatedAt(), entity.getRevocationReason() == null ? null
+                        : new Revocation(entity.getRevocationReason(), entity.getRevokedAt()));
     }
 
 }

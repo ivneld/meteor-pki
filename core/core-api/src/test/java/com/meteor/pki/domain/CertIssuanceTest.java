@@ -85,14 +85,14 @@ class CertIssuanceTest {
         assertThatThrownBy(() -> root.ensureCanIssue(CertType.SUB, ONE_YEAR, Instant.parse("2037-01-01T00:00:00Z")))
             .hasMessage("Only VALID certificates can issue certificates.");
         Cert subWithKey = Cert.restore(1L, sub.getDer(), CertType.SUB, CertStatus.VALID, new PrivateKeyId("k-sub"),
-                false, NOW);
+                false, NOW, null);
         assertThatThrownBy(() -> subWithKey.ensureCanIssue(CertType.SUB, ONE_YEAR, NOW))
             .hasMessage("Issuer certificate cannot issue: pathLenConstraint is 0.");
         subWithKey.ensureCanIssue(CertType.LEAF, ONE_YEAR, NOW);
-        Cert withoutKey = Cert.restore(2L, root.getDer(), CertType.ROOT, CertStatus.VALID, null, false, NOW);
+        Cert withoutKey = Cert.restore(2L, root.getDer(), CertType.ROOT, CertStatus.VALID, null, false, NOW, null);
         assertThatThrownBy(() -> withoutKey.ensureCanIssue(CertType.SUB, ONE_YEAR, NOW))
             .hasMessage("Issuer private key is not registered.");
-        Cert revoked = Cert.restore(3L, root.getDer(), CertType.ROOT, CertStatus.REVOKED, ROOT_KEY, false, NOW);
+        Cert revoked = Cert.restore(3L, root.getDer(), CertType.ROOT, CertStatus.REVOKED, ROOT_KEY, false, NOW, null);
         assertThatThrownBy(() -> revoked.ensureCanIssue(CertType.SUB, ONE_YEAR, NOW)).isInstanceOf(CoreException.class)
             .satisfies(e -> assertThat(((CoreException) e).getErrorCode()).isEqualTo(ErrorCode.CERT_INVALID_INPUT));
     }
@@ -124,11 +124,11 @@ class CertIssuanceTest {
     @Test
     void latestCertificatePerChainIsSelected() {
         Cert root = issueRoot();
-        Cert older = Cert.restore(1L, root.getDer(), CertType.ROOT, CertStatus.VALID, ROOT_KEY, false, NOW);
+        Cert older = Cert.restore(1L, root.getDer(), CertType.ROOT, CertStatus.VALID, ROOT_KEY, false, NOW, null);
         Cert newer = Cert.restore(2L, root.getDer(), CertType.ROOT, CertStatus.VALID, ROOT_KEY, false,
-                NOW.plusSeconds(1));
+                NOW.plusSeconds(1), null);
         Cert sub = Cert.restore(3L, issueSub(root, profile(CertType.SUB, 0, false), false).getDer(), CertType.SUB,
-                CertStatus.VALID, null, false, NOW);
+                CertStatus.VALID, null, false, NOW, null);
 
         assertThat(CaCertificates.latestPerChain(List.of(newer, older, sub))).extracting(Cert::getId)
             .containsExactly(3L, 2L);
