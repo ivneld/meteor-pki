@@ -1,6 +1,7 @@
 package com.meteor.pki.api;
 
 import com.meteor.pki.api.request.RootIssuanceRequest;
+import com.meteor.pki.api.request.RootRenewalRequest;
 import com.meteor.pki.usecase.CertIssuanceUseCase;
 import jakarta.validation.Valid;
 
@@ -21,6 +22,11 @@ public class RootIssuanceController {
     @PostMapping(value = "/api/certificates/root", produces = "application/x-pem-file")
     public ResponseEntity<String> issueRoot(@RequestBody @Valid RootIssuanceRequest request) {
         return ResponseEntity.ok(certIssuanceUseCase.issueRoot(request.toCommand()).getPem());
+    }
+
+    @PostMapping(value = "/api/certificates/root/renewal", produces = "application/x-pem-file")
+    public ResponseEntity<String> renewRoot(@RequestBody @Valid RootRenewalRequest request) {
+        return ResponseEntity.ok(certIssuanceUseCase.renewRoot(request.toCommand()).getPem());
     }
 
 }

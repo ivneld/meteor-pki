@@ -117,7 +117,7 @@ class CertLifecycleTest {
         assertThat(sub.renewalValidity(new RenewalOptions(0, ValidityDuration.from("P1Y")), NOW).notAfter())
             .isEqualTo(Instant.parse("2027-10-13T00:00:00Z"));
         assertThatThrownBy(() -> Cert.renewedSubCa(sub.getDer(), new PrivateKeyId("k-same"), sub))
-            .hasMessage("Renewed certificate must keep the subject and use a new key");
+            .hasMessage("Renewed CA certificate must use a new key");
     }
 
     @Test
@@ -155,6 +155,94 @@ class CertLifecycleTest {
             .hasMessage("Cannot renew invalid certificate.");
         assertThatThrownBy(() -> new RenewalOptions(-1, null))
             .hasMessage("activationStartDaysAgo must not be negative.");
+    }
+
+    @Test
+    void rootRenewalIsSelfSignedWithANewKeyAndKeepsTheLineage() throws Exception {
+        Cert root = saved(issueRoot(rootKeys, "CN=Root"));
+        KeyPair newKeys = TestKeys.ecP256();
+        SubjectPublicKey newKey = TestKeys.publicKey(newKeys);
+
+        root.ensureRenewable(CertType.ROOT, NOW);
+        CertificateTemplate template = root.rootRenewalTemplate(newKey,
+                root.renewalValidity(new RenewalOptions(0, ValidityDuration.from("P20Y")), NOW), DP);
+        TbsCertificate tbs = template.toTbs(SerialNumber.random(new SecureRandom()), TestKeys.ecdsa());
+        Cert renewed = Cert.renewedRoot(tbs.withSignature(TestKeys.sign(tbs, newKeys), newKey),
+                new PrivateKeyId("k-root-2"), root);
+
+        X509CertificateHolder holder = new X509CertificateHolder(renewed.getDer());
+        assertThat(renewed.getCertType()).isEqualTo(CertType.ROOT);
+        assertThat(renewed.getSubjectDn()).isEqualTo(root.getSubjectDn());
+        assertThat(renewed.getIssuerDn()).isEqualTo(root.getSubjectDn());
+        assertThat(renewed.getSubjectKeyId()).isEqualTo(newKey.keyIdentifier()).isNotEqualTo(root.getSubjectKeyId());
+        assertThat(renewed.getAuthorityKeyId()).isEqualTo(renewed.getSubjectKeyId());
+        assertThat(renewed.getTrackingId()).isEqualTo(root.getTrackingId());
+        assertThat(renewed.getNotAfter()).isEqualTo(Instant.parse("2046-10-13T00:00:00Z"));
+        assertThat(holder.isSignatureValid(
+                new org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder().build(newKeys.getPublic())))
+            .isTrue();
+        assertThat(holder.getExtension(Extension.basicConstraints))
+            .isEqualTo(new X509CertificateHolder(root.getDer()).getExtension(Extension.basicConstraints));
+        assertThatThrownBy(() -> Cert.renewedRoot(root.getDer(), new PrivateKeyId("k-same"), root))
+            .hasMessage("Renewed CA certificate must use a new key");
+    }
+
+    @Test
+    void leafRenewalReusesOrReplacesTheClientKey() throws Exception {
+        Cert root = issueRoot(rootKeys, "CN=Root");
+        Cert sub = saved(issueSub(root, rootKeys, subKeys));
+        Cert leaf = saved(issueLeaf(sub, subKeys));
+        ValidityPeriod validity = leaf.renewalValidity(new RenewalOptions(0, null), NOW);
+
+        assertThat(leaf.leafRenewalKey(null)).isEqualTo(leaf.getSubjectPublicKey());
+        Cert sameKey = renewLeaf(leaf, sub, subKeys, leaf.leafRenewalKey(null), validity);
+        SubjectPublicKey newKey = TestKeys.publicKey(TestKeys.ecP256());
+        Cert newKeyRenewal = renewLeaf(leaf, sub, subKeys, leaf.leafRenewalKey(newKey), validity);
+
+        assertThat(sameKey.getCertType()).isEqualTo(CertType.LEAF);
+        assertThat(sameKey.getStatus()).isEqualTo(CertStatus.VALID);
+        assertThat(sameKey.getSubjectKeyId()).isEqualTo(leaf.getSubjectKeyId());
+        assertThat(sameKey.getSerialNumber()).isNotEqualTo(leaf.getSerialNumber());
+        assertThat(sameKey.getTrackingId()).isEqualTo(leaf.getTrackingId());
+        assertThat(newKeyRenewal.getSubjectKeyId()).isEqualTo(newKey.keyIdentifier());
+        assertThat(newKeyRenewal.getTrackingId()).isEqualTo(leaf.getTrackingId());
+        assertThat(new X509CertificateHolder(newKeyRenewal.getDer()).getExtension(Extension.subjectAlternativeName))
+            .isEqualTo(new X509CertificateHolder(leaf.getDer()).getExtension(Extension.subjectAlternativeName));
+        assertThat(validity.length()).isEqualTo(leaf.getValidityPeriod().length());
+        assertThatThrownBy(() -> leaf.leafRenewalKey(rsaKey()))
+            .hasMessage("The renewal public key must use the original key algorithm.");
+        assertThatThrownBy(() -> Cert.renewedLeaf(issueLeaf(sub, subKeys, "CN=other").getDer(), leaf))
+            .hasMessage("Renewed certificate must keep the subject");
+    }
+
+    private Cert renewLeaf(Cert original, Cert issuer, KeyPair issuerKeys, SubjectPublicKey key,
+            ValidityPeriod validity) {
+        CertificateTemplate template = original.renewalTemplate(issuer, key, validity, DP);
+        TbsCertificate tbs = template.toTbs(SerialNumber.random(new SecureRandom()), TestKeys.ecdsa());
+        return Cert.renewedLeaf(tbs.withSignature(TestKeys.sign(tbs, issuerKeys), issuer.getSubjectPublicKey()),
+                original);
+    }
+
+    private static SubjectPublicKey rsaKey() throws Exception {
+        java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return TestKeys.publicKey(generator.generateKeyPair());
+    }
+
+    private static Cert issueLeaf(Cert issuer, KeyPair issuerKeys) {
+        return issueLeaf(issuer, issuerKeys, "CN=device");
+    }
+
+    private static Cert issueLeaf(Cert issuer, KeyPair issuerKeys, String subjectDn) {
+        IssuanceOptions options = new IssuanceOptions(NOW, ValidityDuration.from("P1Y"), List.of(), true, List.of(),
+                List.of());
+        CertProfile profile = CertProfile.create(new CertProfileDraft("leaf-lifecycle", CertType.LEAF,
+                ValidityDuration.from("P1Y"), null, SubjectAltNameTemplate.of("DNS:device.example.com"), Set.of(),
+                false, List.of(), null, List.of(), false, "", false, true, KeyAlgorithm.of("EC-P-256"), List.of()));
+        CertificateTemplate template = profile.subordinateTemplate(issuer.getSubjectDn(), issuer.getSubjectPublicKey(),
+                DistinguishedName.of(subjectDn), TestKeys.publicKey(TestKeys.ecP256()), options, DP, null);
+        TbsCertificate tbs = template.toTbs(SerialNumber.random(new SecureRandom()), TestKeys.ecdsa());
+        return Cert.issuedLeaf(tbs.withSignature(TestKeys.sign(tbs, issuerKeys), issuer.getSubjectPublicKey()), false);
     }
 
     private Cert renew(Cert original, Cert issuer, KeyPair issuerKeys, KeyPair newKeys, ValidityPeriod validity) {

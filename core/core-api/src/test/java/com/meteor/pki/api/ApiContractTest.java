@@ -54,7 +54,7 @@ class ApiContractTest {
         JsonMapper.Builder jsonMapper = JsonMapper.builder();
         JacksonConfig.customize(jsonMapper);
         mockMvc = MockMvcBuilders.standaloneSetup(new LeafIssuanceController(certIssuanceUseCase),
-                new CertManageController(mock(CertWriter.class)),
+                new CertManageController(certIssuanceUseCase, mock(CertWriter.class)),
                 new CertQueryController(mock(CertReader.class), Clock.systemUTC()),
                 new RootIssuanceController(certIssuanceUseCase), new SubCaIssuanceController(certIssuanceUseCase),
                 new CrlController(), new CrlDistributionController(), new CmpController(), new KeyAgreementController(),
@@ -72,8 +72,6 @@ class ApiContractTest {
         String spki = "\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\"";
         String stats = "?start=2026-01-01&end=2026-01-31&statType=DAILY";
         return Stream.of(
-                Arguments.of("POST", "/api/certificates/leaf/0A/renewal", JSON,
-                        "{\"serialNumberHex\":\"01\",\"activationStartDaysAgo\":0,\"revokeOriginalCertificate\":true}"),
                 Arguments.of("POST", "/api/certificates/leaf/0A/revocation", JSON,
                         "{\"serialNumberHex\":\"01\",\"reason\":1}"),
                 Arguments.of("GET", "/api/crls/bulk.zip", null, null),
@@ -111,6 +109,7 @@ class ApiContractTest {
                 Arguments.of("POST", "/api/certificates/leaf/0A/renewal", "{\"activationStartDaysAgo\":-1}"),
                 Arguments.of("POST", "/api/certificates/leaf/0A/revocation", "{}"),
                 Arguments.of("POST", "/api/certificates/root", "{}"),
+                Arguments.of("POST", "/api/certificates/root/renewal", "{}"),
                 Arguments.of("POST", "/api/certificates/sub-ca", "{}"),
                 Arguments.of("POST", "/api/certificates/sub-ca/renewal", "{}"),
                 Arguments.of("POST", "/api/certificates/sub-ca/0A/revocation", "{}"),

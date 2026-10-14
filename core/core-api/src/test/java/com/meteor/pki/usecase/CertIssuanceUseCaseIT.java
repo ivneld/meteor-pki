@@ -20,6 +20,7 @@ import com.meteor.pki.domain.DistinguishedName;
 import com.meteor.pki.domain.KeyAlgorithm;
 import com.meteor.pki.domain.KeyIdentifier;
 import com.meteor.pki.domain.SubjectAltNameTemplate;
+import com.meteor.pki.domain.SubjectPublicKey;
 import com.meteor.pki.domain.TestKeys;
 import com.meteor.pki.domain.ValidityDuration;
 import com.meteor.pki.enums.CertStatus;
@@ -282,6 +283,70 @@ class CertIssuanceUseCaseIT extends ContextTest {
         })).isInstanceOf(OptimisticLockingFailureException.class);
         assertThat(certReader.get(root.getSubjectKeyId(), sub.getSerialNumber()).getRevocation().reason())
             .isEqualTo(CrlReason.KEY_COMPROMISE);
+    }
+
+    @Test
+    void rootRenewalUsesANewKeyAndBecomesTheLatestIssuerInTheLineage() throws Exception {
+        CertProfile rootProfile = profile("root-renew-root", CertType.ROOT, null, "EC-P-256");
+        CertProfile subProfile = profile("root-renew-sub", CertType.SUB, 0, "EC-P-256");
+        Cert root = certIssuanceUseCase.issueRoot(rootCommand(rootProfile, "CN=Root Renew"));
+        Cert sub = certIssuanceUseCase.issueSubCa(subCommand(subProfile, root.getSubjectKeyId(), "CN=Root Renew Sub"));
+
+        Cert renewedRoot = certIssuanceUseCase.renewRoot(
+                new RootRenewCommand(root.getSerialNumber(), root.getSubjectKeyId(), 0, ValidityDuration.from("P20Y")));
+
+        assertThat(renewedRoot.getCertType()).isEqualTo(CertType.ROOT);
+        assertThat(renewedRoot.getSubjectDn()).isEqualTo(root.getSubjectDn());
+        assertThat(renewedRoot.getSubjectKeyId()).isNotEqualTo(root.getSubjectKeyId());
+        assertThat(renewedRoot.getAuthorityKeyId()).isEqualTo(renewedRoot.getSubjectKeyId());
+        assertThat(renewedRoot.getPrivateKeyId()).isNotEqualTo(root.getPrivateKeyId());
+        assertThat(renewedRoot.getTrackingId()).isEqualTo(root.getTrackingId());
+        assertThat(certReader.get(root.getSubjectKeyId(), root.getSerialNumber()).getStatus())
+            .isEqualTo(CertStatus.VALID);
+        validateChain(renewedRoot);
+        Cert subUnderNewRoot = certIssuanceUseCase.renewSubCa(new SubCaRenewCommand(sub.getSerialNumber(),
+                root.getSubjectKeyId(), 0, ValidityDuration.from("P5Y"), true, true));
+        assertThat(subUnderNewRoot.getAuthorityKeyId()).isEqualTo(renewedRoot.getSubjectKeyId());
+        validateChain(renewedRoot, subUnderNewRoot);
+        assertThatThrownBy(() -> certIssuanceUseCase
+            .renewRoot(new RootRenewCommand(sub.getSerialNumber(), root.getSubjectKeyId(), 0, null)))
+            .hasMessage("Certificate type does not match the renewal.");
+    }
+
+    @Test
+    void leafRenewalKeepsTheLineageAndOptionallySupersedesTheOriginal() throws Exception {
+        CertProfile rootProfile = profile("leaf-renew-root", CertType.ROOT, null, "EC-P-256");
+        CertProfile subProfile = profile("leaf-renew-sub", CertType.SUB, 0, "EC-P-256");
+        Cert root = certIssuanceUseCase.issueRoot(rootCommand(rootProfile, "CN=Leaf Renew Root"));
+        Cert sub = certIssuanceUseCase.issueSubCa(subCommand(subProfile, root.getSubjectKeyId(), "CN=Leaf Renew Sub"));
+        Cert leaf = certIssuanceUseCase
+            .issueLeaf(leafCommand(leafProfile("leaf-renew-leaf", false), sub.getSubjectKeyId(), TestKeys.ecP256()));
+
+        Cert sameKey = certIssuanceUseCase
+            .renewLeaf(new LeafRenewCommand(leaf.getSerialNumber(), sub.getSubjectKeyId(), 0, null, false, null));
+        SubjectPublicKey newKey = TestKeys.publicKey(TestKeys.ecP256());
+        Cert rekeyed = certIssuanceUseCase.renewLeaf(new LeafRenewCommand(leaf.getSerialNumber(), sub.getSubjectKeyId(),
+                0, ValidityDuration.from("P6M"), true, newKey));
+
+        assertThat(sameKey.getSubjectKeyId()).isEqualTo(leaf.getSubjectKeyId());
+        assertThat(sameKey.getTrackingId()).isEqualTo(leaf.getTrackingId());
+        assertThat(rekeyed.getSubjectKeyId()).isEqualTo(newKey.keyIdentifier());
+        assertThat(rekeyed.getTrackingId()).isEqualTo(leaf.getTrackingId());
+        assertThat(rekeyed.getSubjectDn()).isEqualTo(leaf.getSubjectDn());
+        assertThat(certReader.get(sub.getSubjectKeyId(), leaf.getSerialNumber()).getRevocation().reason())
+            .isEqualTo(CrlReason.SUPERSEDED);
+        assertThat(certReader.get(sub.getSubjectKeyId(), sameKey.getSerialNumber()).getStatus())
+            .isEqualTo(CertStatus.VALID);
+        validateChain(root, sub, rekeyed);
+        assertThatThrownBy(() -> certIssuanceUseCase
+            .renewLeaf(new LeafRenewCommand(leaf.getSerialNumber(), sub.getSubjectKeyId(), 0, null, false, null)))
+            .hasMessage("Cannot renew invalid certificate.");
+        assertThatThrownBy(() -> certIssuanceUseCase.renewLeaf(new LeafRenewCommand(sameKey.getSerialNumber(),
+                sub.getSubjectKeyId(), 0, ValidityDuration.from("P10Y"), false, null)))
+            .hasMessage("Requested validity is outside the issuer's validity period.");
+        assertThatThrownBy(() -> certIssuanceUseCase
+            .renewLeaf(new LeafRenewCommand(sub.getSerialNumber(), root.getSubjectKeyId(), 0, null, false, null)))
+            .hasMessage("Certificate type does not match the renewal.");
     }
 
     private CertProfile leafProfile(String name, boolean requireApproval) {

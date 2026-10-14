@@ -188,6 +188,46 @@ class CaApiIT extends ApiIT {
             .andExpect(jsonPath("$.errorCode").value("CERT_RESOURCE_NOT_FOUND"));
     }
 
+    @Test
+    void renewsARootWithANewKey() throws Exception {
+        long rootProfile = createProfile("ca-root-renew", "ROOT", "EC-P-256");
+        mockMvc
+            .perform(post("/api/certificates/root").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"certProfileId\":" + rootProfile + ",\"subjectDn\":\"CN=Root Renew API\"}"))
+            .andExpect(status().isOk());
+        String rootSki = caSkiBySubject("CN=Root Renew API");
+        String rootSerial = JsonPath.read(mockMvc.perform(get("/api/certificates/ca/{skiHex}", rootSki))
+            .andReturn()
+            .getResponse()
+            .getContentAsString(), "$.serialNumberHex");
+
+        mockMvc
+            .perform(post("/api/certificates/root/renewal").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + rootSerial + "\",\"akiHex\":\"" + rootSki
+                        + "\",\"activationStartDaysAgo\":0,\"validityPeriod\":\"P20Y\"}"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(startsWith("-----BEGIN CERTIFICATE-----")));
+
+        String list = mockMvc.perform(get("/api/certificates/ca")).andReturn().getResponse().getContentAsString();
+        java.util.List<String> skis = JsonPath.read(list, "$[?(@.subjectDn == 'CN=Root Renew API')].skiHex");
+        java.util.List<String> statuses = JsonPath.read(list, "$[?(@.subjectDn == 'CN=Root Renew API')].certStatus");
+        org.assertj.core.api.Assertions.assertThat(skis).hasSize(2).contains(rootSki);
+        org.assertj.core.api.Assertions.assertThat(statuses).containsOnly("VALID");
+        String renewedSki = skis.stream().filter(ski -> !ski.equals(rootSki)).findFirst().orElseThrow();
+        mockMvc.perform(get("/api/certificates/ca/{skiHex}", renewedSki))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.certType").value("ROOT"))
+            .andExpect(jsonPath("$.akiHex").value(renewedSki));
+        java.util.List<String> trackingIds = JsonPath.read(list, "$[?(@.subjectDn == 'CN=Root Renew API')].trackingId");
+        org.assertj.core.api.Assertions.assertThat(trackingIds).hasSize(2).containsOnly(trackingIds.get(0));
+
+        mockMvc
+            .perform(post("/api/certificates/root/renewal").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"0A\",\"akiHex\":\"" + rootSki + "\",\"activationStartDaysAgo\":0}"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("CERT_RESOURCE_NOT_FOUND"));
+    }
+
     private long createProfile(String name, String type, String keyAlgorithm) throws Exception {
         String body = mockMvc
             .perform(post("/api/profiles").contentType(MediaType.APPLICATION_JSON)

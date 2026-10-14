@@ -132,6 +132,66 @@ class LeafApiIT extends ApiIT {
             .andExpect(jsonPath("$.errorCode").value("CERT_RESOURCE_NOT_FOUND"));
     }
 
+    @Test
+    void renewsALeafWithTheSameOrANewPublicKey() throws Exception {
+        KeyPair device = TestKeys.ecP256();
+        X509Certificate original = x509(JsonPath.read(mockMvc
+            .perform(post("/api/certificates/leaf/spki").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"subjectDn\":\"CN=www.example.com\",\"akiHex\":\"" + issuingSki
+                        + "\",\"subjectPublicKeyInfoDer\":\""
+                        + Base64.getEncoder().encodeToString(device.getPublic().getEncoded()) + "\",\"certProfileId\":"
+                        + leafProfile + "}"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString(), "$.x509CertificateDer"));
+        String serial = original.getSerialNumber().toString(16).toUpperCase();
+
+        String sameKey = mockMvc.perform(post("/api/certificates/leaf/{akiHex}/renewal", issuingSki)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"serialNumberHex\":\"" + serial
+                    + "\",\"activationStartDaysAgo\":0,\"revokeOriginalCertificate\":false,\"validityPeriod\":\"\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.subjectDn").value("CN=www.example.com"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        X509Certificate renewed = x509(JsonPath.read(sameKey, "$.certificateDerBase64"));
+        renewed.verify(issuing.getPublicKey());
+        assertThat(renewed.getPublicKey()).isEqualTo(device.getPublic());
+        assertThat(renewed.getSerialNumber().toString(16).toUpperCase())
+            .isEqualTo(JsonPath.read(sameKey, "$.serialNumberHex"));
+        assertThat(renewed.getSubjectAlternativeNames())
+            .containsExactlyElementsOf(original.getSubjectAlternativeNames());
+
+        KeyPair next = TestKeys.ecP256();
+        String rekeyed = mockMvc
+            .perform(post("/api/certificates/leaf/{akiHex}/renewal", issuingSki).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + serial
+                        + "\",\"activationStartDaysAgo\":0,\"revokeOriginalCertificate\":true,"
+                        + "\"subjectPublicKeyInfoDer\":\""
+                        + Base64.getEncoder().encodeToString(next.getPublic().getEncoded())
+                        + "\",\"validityPeriod\":\"P90D\"}"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        assertThat(x509(JsonPath.read(rekeyed, "$.certificateDerBase64")).getPublicKey()).isEqualTo(next.getPublic());
+
+        mockMvc
+            .perform(post("/api/certificates/leaf/{akiHex}/renewal", issuingSki).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + serial + "\",\"activationStartDaysAgo\":0}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("Cannot renew invalid certificate."));
+        mockMvc
+            .perform(post("/api/certificates/leaf/{akiHex}/renewal", issuingSki).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumberHex\":\"" + renewed.getSerialNumber().toString(16).toUpperCase()
+                        + "\",\"activationStartDaysAgo\":0,\"subjectPublicKeyInfoDer\":\""
+                        + Base64.getEncoder().encodeToString(rsaPublicKey()) + "\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("The renewal public key must use the original key algorithm."));
+    }
+
     private long createProfile(String json) throws Exception {
         String body = mockMvc.perform(post("/api/profiles").contentType(MediaType.APPLICATION_JSON).content(json))
             .andExpect(status().isOk())

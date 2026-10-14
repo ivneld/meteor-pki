@@ -68,7 +68,15 @@ public class Cert {
     }
 
     public static Cert issuedRoot(byte[] der, PrivateKeyId privateKeyId) {
-        Cert cert = new Cert(null, der, CertType.ROOT, CertStatus.VALID, privateKeyId, false, null, null, null);
+        return root(der, privateKeyId, null);
+    }
+
+    public static Cert renewedRoot(byte[] der, PrivateKeyId privateKeyId, Cert original) {
+        return root(der, privateKeyId, original.trackingId).ensureRenewalOf(original, true);
+    }
+
+    private static Cert root(byte[] der, PrivateKeyId privateKeyId, String trackingId) {
+        Cert cert = new Cert(null, der, CertType.ROOT, CertStatus.VALID, privateKeyId, false, null, trackingId, null);
         BasicConstraints basicConstraints = cert.basicConstraints();
         if (basicConstraints == null || !basicConstraints.isCA() || basicConstraints.getPathLenConstraint() != null) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "BasicConstraints must indicate an unconstrained CA");
@@ -86,13 +94,7 @@ public class Cert {
     }
 
     public static Cert renewedSubCa(byte[] der, PrivateKeyId privateKeyId, Cert original) {
-        Cert renewed = subCa(der, privateKeyId, original.trackingId);
-        if (!renewed.getSubjectDn().equals(original.getSubjectDn())
-                || renewed.getSubjectKeyId().equals(original.getSubjectKeyId())) {
-            throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
-                    "Renewed certificate must keep the subject and use a new key");
-        }
-        return renewed;
+        return subCa(der, privateKeyId, original.trackingId).ensureRenewalOf(original, true);
     }
 
     private static Cert subCa(byte[] der, PrivateKeyId privateKeyId, String trackingId) {
@@ -105,13 +107,30 @@ public class Cert {
     }
 
     public static Cert issuedLeaf(byte[] der, boolean pendingApproval) {
-        Cert cert = new Cert(null, der, CertType.LEAF, pendingApproval ? CertStatus.PENDING : CertStatus.VALID, null,
-                false, null, null, null);
+        return leaf(der, pendingApproval ? CertStatus.PENDING : CertStatus.VALID, null);
+    }
+
+    public static Cert renewedLeaf(byte[] der, Cert original) {
+        return leaf(der, CertStatus.VALID, original.trackingId).ensureRenewalOf(original, false);
+    }
+
+    private static Cert leaf(byte[] der, CertStatus status, String trackingId) {
+        Cert cert = new Cert(null, der, CertType.LEAF, status, null, false, null, trackingId, null);
         if (cert.isCa()) {
             throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
                     "End-entity certificate expected, but BasicConstraints cA=true");
         }
         return cert;
+    }
+
+    private Cert ensureRenewalOf(Cert original, boolean newKeyRequired) {
+        if (!getSubjectDn().equals(original.getSubjectDn())) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "Renewed certificate must keep the subject");
+        }
+        if (newKeyRequired && getSubjectKeyId().equals(original.getSubjectKeyId())) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT, "Renewed CA certificate must use a new key");
+        }
+        return this;
     }
 
     public static Cert restore(Long id, byte[] der, CertType certType, CertStatus status, PrivateKeyId privateKeyId,
@@ -163,6 +182,27 @@ public class Cert {
         Extensions extensions = RenewalExtensions.of(holder.getExtensions(), getAuthorityKeyId(),
                 issuer.getSubjectKeyId(), subjectKey.keyIdentifier(), distributionPoints);
         return new CertificateTemplate(issuer.getSubjectDn(), getSubjectDn(), subjectKey, validity, extensions);
+    }
+
+    public CertificateTemplate rootRenewalTemplate(SubjectPublicKey subjectKey, ValidityPeriod validity,
+            DistributionPoints distributionPoints) {
+        KeyIdentifier keyId = subjectKey.keyIdentifier();
+        Extensions extensions = RenewalExtensions.of(holder.getExtensions(), getSubjectKeyId(), keyId, keyId,
+                distributionPoints);
+        return new CertificateTemplate(getSubjectDn(), getSubjectDn(), subjectKey, validity, extensions);
+    }
+
+    public SubjectPublicKey leafRenewalKey(SubjectPublicKey requested) {
+        if (requested == null) {
+            return getSubjectPublicKey();
+        }
+        if (!requested.keyAlgorithm().equals(getKeyAlgorithm())) {
+            throw new CoreException(ErrorCode.CERT_INVALID_INPUT,
+                    "The renewal public key must use the original key algorithm.")
+                .property("expected", getKeyAlgorithm().value())
+                .property("actual", requested.keyAlgorithm().value());
+        }
+        return requested;
     }
 
     public Cert revoke(CertType expected, CrlReason reason, Instant now) {

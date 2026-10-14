@@ -1,6 +1,6 @@
 # REST API 호출 시나리오
 
-인증서 프로파일을 만들고 Root CA → Sub CA → Leaf 순서로 체인을 만든 뒤, 조회·다운로드, Sub CA 갱신·폐기, 오류 응답까지 확인하는 순서다. 같은 순서를 실행하는
+인증서 프로파일을 만들고 Root CA → Sub CA → Leaf 순서로 체인을 만든 뒤, 조회·다운로드, Sub CA 갱신·폐기, Leaf·Root 갱신, 오류 응답까지 확인하는 순서다. 같은 순서를 실행하는
 스크립트 [`scripts/api-scenario.sh`](../scripts/api-scenario.sh) 가 있다. 스크립트는 각 응답을 `openssl` 로 검증하고, 기대와 다르면 멈춘다.
 
 ```bash
@@ -257,7 +257,54 @@ Sub CA 를 25 년으로 갱신하면 키를 만들기 전에 거절한다.
  "issuerNotBefore":"2026-10-14T07:58:23Z","issuerNotAfter":"2046-10-14T07:58:23Z"}
 ```
 
-## 19. 오류 응답
+## 19. Leaf 갱신
+
+경로의 `akiHex` 는 원본 Leaf 의 발급자 SKI 다. 주체 DN·SAN·EKU 같은 확장은 원본에서 그대로 가져온다. Leaf 개인키는 클라이언트가
+갖고 있으므로 `subjectPublicKeyInfoDer` 를 빼면 원본 공개키로, 보내면 그 공개키로 발급한다. 보낸 공개키는 원본과 키 알고리즘이 같아야 한다.
+
+```bash
+curl -X POST 'localhost:8080/api/certificates/leaf/{갱신한 Sub CA SKI}/renewal' -H 'Content-Type: application/json' \
+     -d '{"serialNumberHex":"{Leaf 일련번호}","activationStartDaysAgo":0,"revokeOriginalCertificate":false}'
+```
+
+```json
+{"serialNumberHex":"48201178CD95...","subjectDn":"CN=www.example.com,O=Meteor","certificateDerBase64":"MIIB..."}
+```
+
+새 키로 갱신하면서 `revokeOriginalCertificate` 를 true 로 주면 원본은 `SUPERSEDED` 로 폐기되고, 그 원본을 다시 갱신하면
+"Cannot renew invalid certificate." 다.
+
+```bash
+curl -X POST 'localhost:8080/api/certificates/leaf/{갱신한 Sub CA SKI}/renewal' -H 'Content-Type: application/json' -d '{
+  "serialNumberHex":"{Leaf 일련번호}","activationStartDaysAgo":0,"revokeOriginalCertificate":true,
+  "subjectPublicKeyInfoDer":"{새 공개키 SPKI DER Base64}","validityPeriod":"P90D"}'
+```
+
+## 20. Root 갱신
+
+원본 Root 는 `(akiHex, serialNumberHex)` 로 가리킨다. Root 의 AKI 는 자기 SKI 다. 서버는 **새 키**를 만들어 같은 주체 DN 으로 자체
+서명하고 PEM 으로 돌려준다. Root 는 폐기할 수 없으므로 원본 Root 도 `VALID` 로 남고, CA 목록에서 두 Root 는 같은 `trackingId` 를 가진다.
+
+```bash
+curl -X POST localhost:8080/api/certificates/root/renewal -H 'Content-Type: application/json' \
+     -d '{"serialNumberHex":"{Root 일련번호}","akiHex":"{Root SKI}","activationStartDaysAgo":0}'
+```
+
+```
+2D7050361B06...  VALID  6036c8719ad24f4d...
+5F3D53A98025...  VALID  6036c8719ad24f4d...
+```
+
+이후 Sub CA 를 `useLatestIssuer=true` 로 갱신하면 원본 Root 의 계보에서 가장 최근 Root 가 서명한다.
+
+```bash
+curl -X POST localhost:8080/api/certificates/sub-ca/renewal -H 'Content-Type: application/json' -d '{
+  "serialNumberHex":"{갱신한 Sub CA 일련번호}","akiHex":"{원본 Root SKI}","activationStartDaysAgo":0,"validityPeriod":"P5Y",
+  "revokeOriginalCertificate":false,"useLatestIssuer":true}'
+openssl verify -CAfile root-renewed.pem sub-under-new-root.pem
+```
+
+## 21. 오류 응답
 
 오류는 모두 `title: PKI-ERROR` 인 ProblemDetail 이고, 클라이언트는 `errorCode` 로 분기한다.
 
@@ -272,8 +319,9 @@ Sub CA 를 25 년으로 갱신하면 키를 만들기 전에 거절한다.
 | pathLen 0 인 Sub CA 아래 CA 발급 | 400 | `CERT_INVALID_INPUT` | Issuer certificate cannot issue: pathLenConstraint is 0. |
 | 프로파일보다 긴 `validityPeriod` | 400 | `CERT_INVALID_INPUT` | Validity is outside allowed policy range. |
 | 발급자의 유효기간을 벗어나는 발급·갱신 | 400 | `CERT_INVALID_INPUT` | Requested validity is outside the issuer's validity period. |
-| 폐기·만료된 Sub CA 갱신 | 400 | `CERT_INVALID_INPUT` | Cannot renew invalid certificate. |
-| Root 를 Sub CA 갱신으로 요청 | 400 | `CERT_INVALID_INPUT` | Certificate type does not match the renewal. |
+| 폐기·만료된 인증서 갱신 | 400 | `CERT_INVALID_INPUT` | Cannot renew invalid certificate. |
+| 종류가 다른 갱신 엔드포인트(Root 를 Sub CA 갱신으로, Sub CA 를 Root 갱신으로) | 400 | `CERT_INVALID_INPUT` | Certificate type does not match the renewal. |
+| 원본과 키 알고리즘이 다른 공개키로 Leaf 갱신 | 400 | `CERT_INVALID_INPUT` | The renewal public key must use the original key algorithm. |
 | Root 폐기 | 400 | `CERT_REVOKE_ROOT_FORBIDDEN` | Root certificates cannot be revoked. |
 | 이미 폐기한 인증서 폐기 | 400 | `CERT_INVALID_INPUT` | Can not revoke certificate |
 | 없는 CRLReason 코드(7) | 400 | `CERT_INVALID_INPUT` | Unsupported CRL reason code. |

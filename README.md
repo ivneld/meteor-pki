@@ -9,12 +9,12 @@
 |---|---|
 | x509-ra API 계약 (경로, 메서드, 미디어 타입, 요청·응답 DTO, 검증, 오류 응답 모양) | 완료 |
 | x509-ra 동작: 인증서 프로파일·EKU, CA 체인(Root, Sub CA, 조회, 다운로드), Leaf 발급(SPKI, CSR) | 완료 |
-| x509-ra 동작: Sub CA 갱신(새 키)·폐기, 발급자 유효기간 안에서만 발급·갱신 | 완료 |
-| x509-ra 동작: Leaf 갱신·폐기, CRL, CMP, 키 합의·동기화, 통계, 보안 | 예정. 지금은 501 |
+| x509-ra 동작: Root·Sub CA 갱신(새 키), Leaf 갱신, Sub CA 폐기, 갱신 이력(trackingId), 발급자 유효기간 안에서만 발급·갱신 | 완료 |
+| x509-ra 동작: Leaf 폐기, CRL, CMP, 키 합의·동기화, 통계, 보안 | 예정. 지금은 501 |
 | x509-va, x509-crypto, x509-domain, x509-support | 예정 |
 
 옮긴 계약의 전체 목록, 구현 현황, 원본과의 차이는 [docs/X509_RA_API.md](docs/X509_RA_API.md). 계약은 `ApiContractTest` 가, 구현한
-동작은 `*ApiIT` 가 지킨다. 프로파일 → Root → Sub CA → Leaf → Sub CA 갱신·폐기를 차례로 호출해 보는 순서는 [docs/API_SCENARIOS.md](docs/API_SCENARIOS.md)
+동작은 `*ApiIT` 가 지킨다. 프로파일 → Root → Sub CA → Leaf → Sub CA 갱신·폐기 → Leaf·Root 갱신을 차례로 호출해 보는 순서는 [docs/API_SCENARIOS.md](docs/API_SCENARIOS.md)
 와 `scripts/api-scenario.sh`.
 
 ## 모듈 구성

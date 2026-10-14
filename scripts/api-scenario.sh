@@ -144,7 +144,51 @@ expect_status 404 -X POST "$BASE/api/certificates/leaf/spki" -H "$JSON" -d "{
   \"subjectDn\":\"CN=x\",\"akiHex\":\"$RETIRED_SKI\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
   \"certProfileId\":$TLS_PROFILE}" | json "['detail']"
 
-step "19. 오류 응답"
+step "19. Leaf 갱신 - 공개키를 보내지 않으면 원본 공개키로 발급"
+LEAF_SERIAL=$(openssl x509 -in "$WORK/leaf-renewed.pem" -noout -serial | cut -d= -f2)
+expect_status 200 -X POST "$BASE/api/certificates/leaf/$RENEWED_SKI/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$LEAF_SERIAL\",\"activationStartDaysAgo\":0,\"revokeOriginalCertificate\":false}" > "$WORK/leaf-same.json"
+json "['serialNumberHex']" < "$WORK/leaf-same.json"
+json "['certificateDerBase64']" < "$WORK/leaf-same.json" | pem_from_der_b64 > "$WORK/leaf-same.pem"
+cmp <(openssl x509 -in "$WORK/leaf-renewed.pem" -noout -pubkey) <(openssl x509 -in "$WORK/leaf-same.pem" -noout -pubkey) \
+    && echo "원본과 같은 공개키"
+openssl verify -CAfile "$WORK/root.pem" -untrusted "$WORK/sub-renewed.pem" "$WORK/leaf-same.pem"
+
+step "20. Leaf 갱신 - 새 공개키로 발급하고 원본은 SUPERSEDED 로 폐기"
+openssl ecparam -name prime256v1 -genkey -noout -out "$WORK/device2.key" 2>/dev/null
+SPKI2=$(openssl pkey -in "$WORK/device2.key" -pubout -outform der | base64 | tr -d '\n')
+expect_status 200 -X POST "$BASE/api/certificates/leaf/$RENEWED_SKI/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$LEAF_SERIAL\",\"activationStartDaysAgo\":0,\"revokeOriginalCertificate\":true,
+  \"subjectPublicKeyInfoDer\":\"$SPKI2\",\"validityPeriod\":\"P90D\"}" \
+    | json "['certificateDerBase64']" | pem_from_der_b64 > "$WORK/leaf-rekeyed.pem"
+openssl x509 -in "$WORK/leaf-rekeyed.pem" -noout -subject -dates -ext subjectAltName
+cmp <(openssl pkey -in "$WORK/device2.key" -pubout) <(openssl x509 -in "$WORK/leaf-rekeyed.pem" -noout -pubkey) \
+    && echo "요청한 새 공개키"
+echo "- 폐기된 원본은 다시 갱신할 수 없다:"
+expect_status 400 -X POST "$BASE/api/certificates/leaf/$RENEWED_SKI/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$LEAF_SERIAL\",\"activationStartDaysAgo\":0}" | json "['detail']"
+
+step "21. Root 갱신 (새 키로 자체 서명, trackingId 승계)"
+expect_status 200 -X POST "$BASE/api/certificates/root/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$(openssl x509 -in "$WORK/root.pem" -noout -serial | cut -d= -f2)\",\"akiHex\":\"$ROOT_SKI\",
+  \"activationStartDaysAgo\":0}" > "$WORK/root-renewed.pem"
+NEW_ROOT_SKI=$(openssl x509 -in "$WORK/root-renewed.pem" -noout -ext subjectKeyIdentifier | tail -1 | tr -d ' :')
+openssl x509 -in "$WORK/root-renewed.pem" -noout -subject -issuer -dates
+openssl verify -CAfile "$WORK/root-renewed.pem" "$WORK/root-renewed.pem"
+expect_status 200 "$BASE/api/certificates/ca" | python3 -c "import sys,json
+roots=[c for c in json.load(sys.stdin) if c['subjectDn']=='CN=Scenario Root CA $RUN,O=Meteor,C=KR']
+for c in roots: print(c['skiHex'], c['certStatus'], c['trackingId'][:16])
+assert len(roots)==2 and len({c['trackingId'] for c in roots})==1, 'trackingId 가 같아야 한다'"
+echo "- 갱신한 Sub CA 를 계보의 최신 Root 로 갱신 (useLatestIssuer=true):"
+RENEWED_SERIAL=$(openssl x509 -in "$WORK/sub-renewed.pem" -noout -serial | cut -d= -f2)
+expect_status 200 -X POST "$BASE/api/certificates/sub-ca/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$RENEWED_SERIAL\",\"akiHex\":\"$ROOT_SKI\",\"activationStartDaysAgo\":0,\"validityPeriod\":\"P5Y\",
+  \"revokeOriginalCertificate\":false,\"useLatestIssuer\":true}" \
+    | json "['x509CertificateDer']" | pem_from_der_b64 > "$WORK/sub-under-new-root.pem"
+openssl verify -CAfile "$WORK/root-renewed.pem" "$WORK/sub-under-new-root.pem"
+[[ "$NEW_ROOT_SKI" != "$ROOT_SKI" ]] && echo "새 Root SKI=$NEW_ROOT_SKI"
+
+step "22. 오류 응답"
 echo "- 같은 이름의 프로파일:"
 expect_status 400 -X POST "$BASE/api/profiles" -H "$JSON" -d "{
   \"policyName\":\"Root CA $RUN\",\"certType\":\"ROOT\",\"validityPeriod\":\"P20Y\",\"keyUsages\":[],
@@ -164,7 +208,6 @@ expect_status 400 -X POST "$BASE/api/certificates/sub-ca" -H "$JSON" -d "{
   \"certProfileId\":$SUB_PROFILE,\"subjectDn\":\"CN=Too Long\",\"akiHex\":\"$ROOT_SKI\",
   \"notBefore\":\"2040-01-01T00:00:00Z\"}" | json "['detail']"
 echo "- 상위 CA(Root 20년)의 유효기간을 넘는 갱신:"
-RENEWED_SERIAL=$(openssl x509 -in "$WORK/sub-renewed.pem" -noout -serial | cut -d= -f2)
 expect_status 400 -X POST "$BASE/api/certificates/sub-ca/renewal" -H "$JSON" -d "{
   \"serialNumberHex\":\"$RENEWED_SERIAL\",\"akiHex\":\"$ROOT_SKI\",\"activationStartDaysAgo\":0,
   \"validityPeriod\":\"P25Y\",\"revokeOriginalCertificate\":false,\"useLatestIssuer\":false}" | json "['detail']"
@@ -175,6 +218,15 @@ expect_status 400 -X POST "$BASE/api/certificates/sub-ca/$ROOT_SKI/revocation" -
 echo "- 이미 폐기한 Sub CA 폐기:"
 expect_status 400 -X POST "$BASE/api/certificates/sub-ca/$ROOT_SKI/revocation" -H "$JSON" \
     -d "{\"serialNumberHex\":\"$RETIRED_SERIAL\",\"reason\":1}" | json "['detail']"
+echo "- 원본과 키 알고리즘이 다른 공개키로 Leaf 갱신:"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$WORK/rsa.key" 2>/dev/null
+RSA_SPKI=$(openssl pkey -in "$WORK/rsa.key" -pubout -outform der | base64 | tr -d '\n')
+SAME_SERIAL=$(json "['serialNumberHex']" < "$WORK/leaf-same.json")
+expect_status 400 -X POST "$BASE/api/certificates/leaf/$RENEWED_SKI/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$SAME_SERIAL\",\"activationStartDaysAgo\":0,\"subjectPublicKeyInfoDer\":\"$RSA_SPKI\"}" | json "['detail']"
+echo "- Root 갱신 엔드포인트로 Sub CA 갱신:"
+expect_status 400 -X POST "$BASE/api/certificates/root/renewal" -H "$JSON" -d "{
+  \"serialNumberHex\":\"$RENEWED_SERIAL\",\"akiHex\":\"$ROOT_SKI\",\"activationStartDaysAgo\":0}" | json "['detail']"
 echo "- 없는 발급자:"
 expect_status 404 -X POST "$BASE/api/certificates/leaf/spki" -H "$JSON" -d "{
   \"subjectDn\":\"CN=x\",\"akiHex\":\"00FF\",\"subjectPublicKeyInfoDer\":\"$SPKI\",
