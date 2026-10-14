@@ -132,6 +132,32 @@ class CertIssuanceUseCaseIT extends ContextTest {
             .hasMessage("The subject public key does not match the profile's key spec.");
     }
 
+    @Test
+    void issuanceMustStayWithinTheIssuerValidity() {
+        CertProfile rootProfile = profile("window-root", CertType.ROOT, null, "EC-P-256");
+        CertProfile subProfile = profile("window-sub", CertType.SUB, 0, "EC-P-256");
+        Cert root = certIssuanceUseCase.issueRoot(new RootIssueCommand(rootProfile.getId(),
+                DistinguishedName.of("CN=Window Root"), ValidityDuration.from("P3Y"), List.of(), List.of(), null));
+        Cert sub = certIssuanceUseCase.issueSubCa(
+                new SubCaIssueCommand(subProfile.getId(), DistinguishedName.of("CN=Window Sub"), root.getSubjectKeyId(),
+                        List.of(), false, List.of(), List.of(), ValidityDuration.from("P2Y"), null));
+
+        assertThatThrownBy(
+                () -> certIssuanceUseCase.issueSubCa(subCommand(subProfile, root.getSubjectKeyId(), "CN=Too Long")))
+            .isInstanceOf(CoreException.class)
+            .hasMessage("Requested validity is outside the issuer's validity period.");
+        assertThatThrownBy(() -> certIssuanceUseCase.issueSubCa(new SubCaIssueCommand(subProfile.getId(),
+                DistinguishedName.of("CN=Too Early"), root.getSubjectKeyId(), List.of(), false, List.of(), List.of(),
+                ValidityDuration.from("P1Y"), root.getNotBefore().minusSeconds(60))))
+            .hasMessage("Requested validity is outside the issuer's validity period.");
+        assertThatThrownBy(
+                () -> certIssuanceUseCase.issueLeaf(new LeafIssueCommand(leafProfile("window-leaf", false).getId(),
+                        DistinguishedName.of("CN=device"), sub.getSubjectKeyId(), TestKeys.publicKey(TestKeys.ecP256()),
+                        List.of(), false, List.of(), List.of(), ValidityDuration.from("P1Y"),
+                        sub.getNotAfter().minus(java.time.Duration.ofDays(30)))))
+            .hasMessage("Requested validity is outside the issuer's validity period.");
+    }
+
     private CertProfile leafProfile(String name, boolean requireApproval) {
         return certProfileUseCase.create(new CertProfileCreateCommand(name, CertType.LEAF, ValidityDuration.from("P1Y"),
                 null, SubjectAltNameTemplate.of("DNS:device.example.com"), Set.of(KeyUsage.DIGITAL_SIGNATURE), true,

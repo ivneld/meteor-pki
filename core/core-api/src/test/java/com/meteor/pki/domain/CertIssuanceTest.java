@@ -28,6 +28,8 @@ class CertIssuanceTest {
     private static final DistributionPoints DP = new DistributionPoints("http://dp.example.com",
             "http://dp.example.com", "http://dp.example.com", "/api/ocsp", "/api/ca", "/api/crl");
 
+    private static final ValidityPeriod ONE_YEAR = new ValidityPeriod(NOW, NOW.plus(java.time.Duration.ofDays(365)));
+
     private static final PrivateKeyId ROOT_KEY = new PrivateKeyId("k-root");
 
     private final KeyPair rootKeys = TestKeys.ecP256();
@@ -79,19 +81,19 @@ class CertIssuanceTest {
         Cert root = issueRoot();
         Cert sub = issueSub(root, profile(CertType.SUB, 0, false), false);
 
-        root.ensureCanIssue(CertType.SUB, NOW);
-        assertThatThrownBy(() -> root.ensureCanIssue(CertType.SUB, Instant.parse("2037-01-01T00:00:00Z")))
+        root.ensureCanIssue(CertType.SUB, ONE_YEAR, NOW);
+        assertThatThrownBy(() -> root.ensureCanIssue(CertType.SUB, ONE_YEAR, Instant.parse("2037-01-01T00:00:00Z")))
             .hasMessage("Only VALID certificates can issue certificates.");
         Cert subWithKey = Cert.restore(1L, sub.getDer(), CertType.SUB, CertStatus.VALID, new PrivateKeyId("k-sub"),
                 false, NOW);
-        assertThatThrownBy(() -> subWithKey.ensureCanIssue(CertType.SUB, NOW))
+        assertThatThrownBy(() -> subWithKey.ensureCanIssue(CertType.SUB, ONE_YEAR, NOW))
             .hasMessage("Issuer certificate cannot issue: pathLenConstraint is 0.");
-        subWithKey.ensureCanIssue(CertType.LEAF, NOW);
+        subWithKey.ensureCanIssue(CertType.LEAF, ONE_YEAR, NOW);
         Cert withoutKey = Cert.restore(2L, root.getDer(), CertType.ROOT, CertStatus.VALID, null, false, NOW);
-        assertThatThrownBy(() -> withoutKey.ensureCanIssue(CertType.SUB, NOW))
+        assertThatThrownBy(() -> withoutKey.ensureCanIssue(CertType.SUB, ONE_YEAR, NOW))
             .hasMessage("Issuer private key is not registered.");
         Cert revoked = Cert.restore(3L, root.getDer(), CertType.ROOT, CertStatus.REVOKED, ROOT_KEY, false, NOW);
-        assertThatThrownBy(() -> revoked.ensureCanIssue(CertType.SUB, NOW)).isInstanceOf(CoreException.class)
+        assertThatThrownBy(() -> revoked.ensureCanIssue(CertType.SUB, ONE_YEAR, NOW)).isInstanceOf(CoreException.class)
             .satisfies(e -> assertThat(((CoreException) e).getErrorCode()).isEqualTo(ErrorCode.CERT_INVALID_INPUT));
     }
 

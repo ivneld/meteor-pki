@@ -1,9 +1,7 @@
 package com.meteor.pki.domain;
 
-import java.time.Instant;
 import java.util.List;
 
-import com.meteor.pki.enums.CertType;
 import com.meteor.pki.support.error.CoreException;
 import com.meteor.pki.support.error.ErrorCode;
 
@@ -20,13 +18,11 @@ public class CertReader {
         this.certRepository = certRepository;
     }
 
-    public Cert getIssuer(KeyIdentifier authorityKeyId, CertType target, Instant now) {
-        Cert issuer = certRepository.findLatestValidCa(authorityKeyId)
+    public Cert getIssuer(KeyIdentifier authorityKeyId) {
+        return certRepository.findLatestValidCa(authorityKeyId)
             .orElseThrow(() -> new CoreException(ErrorCode.CERT_RESOURCE_NOT_FOUND,
                     "Failed to find a CA certificate matching the AKI.")
                 .property("akiHex", authorityKeyId.toHex()));
-        issuer.ensureCanIssue(target, now);
-        return issuer;
     }
 
     public Cert getCa(KeyIdentifier subjectKeyId) {

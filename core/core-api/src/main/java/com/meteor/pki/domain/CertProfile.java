@@ -178,6 +178,10 @@ public class CertProfile {
         }
     }
 
+    public ValidityPeriod validityFor(IssuanceOptions options) {
+        return options.validityWithin(validityDuration);
+    }
+
     public CertificateTemplate rootTemplate(DistinguishedName subjectDn, SubjectPublicKey subjectKey,
             IssuanceOptions options) {
         ensureIssues(CertType.ROOT);
@@ -188,8 +192,7 @@ public class CertProfile {
         add(extensions, Extension.subjectKeyIdentifier, false, new SubjectKeyIdentifier(keyId.value()));
         addCrlDistributionPoints(extensions, cleaned(options.crlDps()));
         addAuthorityInfoAccess(extensions, List.of(), concat(ocspUris, options.ocspUris()));
-        return new CertificateTemplate(subjectDn, subjectDn, subjectKey, options.validityWithin(validityDuration),
-                extensions.generate());
+        return new CertificateTemplate(subjectDn, subjectDn, subjectKey, validityFor(options), extensions.generate());
     }
 
     public CertificateTemplate subordinateTemplate(DistinguishedName issuerDn, SubjectPublicKey issuerKey,
@@ -220,8 +223,7 @@ public class CertProfile {
         if (requestedSubjectAltName != null) {
             extensions.addExtension(requestedSubjectAltName);
         }
-        return new CertificateTemplate(issuerDn, subjectDn, subjectKey, options.validityWithin(validityDuration),
-                extensions.generate());
+        return new CertificateTemplate(issuerDn, subjectDn, subjectKey, validityFor(options), extensions.generate());
     }
 
     private void ensureKeyMatches(SubjectPublicKey subjectKey) {

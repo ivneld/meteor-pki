@@ -97,7 +97,7 @@ public class Cert {
         return new Cert(id, der, certType, status, privateKeyId, hidden, createdAt);
     }
 
-    public void ensureCanIssue(CertType target, Instant now) {
+    public void ensureCanIssue(CertType target, ValidityPeriod requested, Instant now) {
         if (getStatusAt(now) != CertStatus.VALID) {
             throw notEligible("Only VALID certificates can issue certificates.");
         }
@@ -110,6 +110,13 @@ public class Cert {
         }
         if (privateKeyId == null) {
             throw notEligible("Issuer private key is not registered.");
+        }
+        if (!getValidityPeriod().contains(requested)) {
+            throw notEligible("Requested validity is outside the issuer's validity period.")
+                .property("notBefore", requested.notBefore().toString())
+                .property("notAfter", requested.notAfter().toString())
+                .property("issuerNotBefore", getNotBefore().toString())
+                .property("issuerNotAfter", getNotAfter().toString());
         }
     }
 
@@ -187,6 +194,10 @@ public class Cert {
 
     public Instant getNotAfter() {
         return holder.getNotAfter().toInstant();
+    }
+
+    public ValidityPeriod getValidityPeriod() {
+        return new ValidityPeriod(getNotBefore(), getNotAfter());
     }
 
     public SubjectPublicKey getSubjectPublicKey() {

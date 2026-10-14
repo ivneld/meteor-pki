@@ -76,13 +76,15 @@ public class CertIssuanceUseCase {
 
     public Cert issueSubCa(SubCaIssueCommand command) {
         Instant now = clock.instant();
-        Cert issuer = certReader.getIssuer(command.issuerKeyId(), CertType.SUB, now);
+        Cert issuer = certReader.getIssuer(command.issuerKeyId());
         CertProfile profile = certProfileReader.getForIssuance(command.certProfileId(), CertType.SUB);
+        IssuanceOptions options = command.options(now);
+        issuer.ensureCanIssue(CertType.SUB, profile.validityFor(options), now);
 
         PrivateKeyId keyId = PrivateKeyId.generate(now);
         SubjectPublicKey publicKey = generateKeyPair(keyId, profile.getKeyAlgorithm());
         CertificateTemplate template = profile.subordinateTemplate(issuer.getSubjectDn(), issuer.getSubjectPublicKey(),
-                command.subjectDn(), publicKey, command.options(now), distributionPoints, null);
+                command.subjectDn(), publicKey, options, distributionPoints, null);
         byte[] der = sign(template, issuer.getPrivateKeyId(), issuer.getSubjectPublicKey());
         Cert subCa = Cert.issuedSubCa(der, keyId);
 
@@ -102,8 +104,9 @@ public class CertIssuanceUseCase {
 
     private Cert issueLeaf(Long certProfileId, KeyIdentifier issuerKeyId, DistinguishedName subjectDn,
             SubjectPublicKey publicKey, IssuanceOptions options, Extension requestedSubjectAltName) {
-        Cert issuer = certReader.getIssuer(issuerKeyId, CertType.LEAF, clock.instant());
+        Cert issuer = certReader.getIssuer(issuerKeyId);
         CertProfile profile = certProfileReader.getForIssuance(certProfileId, CertType.LEAF);
+        issuer.ensureCanIssue(CertType.LEAF, profile.validityFor(options), clock.instant());
 
         CertificateTemplate template = profile.subordinateTemplate(issuer.getSubjectDn(), issuer.getSubjectPublicKey(),
                 subjectDn, publicKey, options, distributionPoints, requestedSubjectAltName);

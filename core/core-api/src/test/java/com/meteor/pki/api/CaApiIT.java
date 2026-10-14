@@ -39,7 +39,7 @@ class CaApiIT extends ApiIT {
         String subResponse = mockMvc
             .perform(post("/api/certificates/sub-ca").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"certProfileId\":" + subProfile + ",\"subjectDn\":\"CN=API Sub,O=Meteor,C=KR\""
-                        + ",\"akiHex\":\"" + rootSki + "\",\"includeDefaultCrlDp\":true}"))
+                        + ",\"akiHex\":\"" + rootSki + "\",\"includeDefaultCrlDp\":true,\"validityPeriod\":\"P1Y\"}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.x509CertificateDer").isString())
             .andReturn()
