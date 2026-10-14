@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head(${cert.commonName()})}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('certificates')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb small">
+            <li class="breadcrumb-item"><a href="/ui/certificates">인증서</a></li>
+            <li class="breadcrumb-item active" th:text="${cert.commonName()}">CN</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span th:replace="~{fragments :: type(${cert.certType()})}"></span>
+                <span th:replace="~{fragments :: status(${cert.status()})}"></span>
+                <span th:if="${cert.expiringSoon()}" class="badge text-bg-warning" th:text="${cert.daysLeft()} + '일 후 만료'">만료 임박</span>
+            </div>
+            <h1 class="h3 mb-0" th:text="${cert.commonName()}">CN</h1>
+            <div class="text-secondary small" th:text="${cert.subjectDn()}">DN</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a th:href="${cert.downloadUrl('pem')}" class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i>PEM</a>
+            <a th:href="${cert.downloadUrl('der')}" class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i>DER</a>
+            <a th:if="${cert.canIssueCa()}" th:href="@{/ui/issue/sub-ca(akiHex=${cert.skiHex()})}" class="btn btn-primary"><i class="bi bi-diagram-2 me-1"></i>이 CA 로 Sub CA 발급</a>
+            <a th:if="${cert.canIssueLeaf()}" th:href="@{/ui/issue/leaf(akiHex=${cert.skiHex()})}" class="btn btn-info text-white"><i class="bi bi-file-earmark-lock me-1"></i>이 CA 로 Leaf 발급</a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header bg-white"><i class="bi bi-info-circle me-2"></i><strong>인증서 정보</strong></div>
+                <div class="card-body p-0">
+                    <table class="table mb-0">
+                        <tbody>
+                        <tr><th class="text-secondary fw-normal w-25 ps-3">주체</th><td class="mono" th:text="${cert.subjectDn()}"></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">발급자</th>
+                            <td><span class="mono" th:text="${cert.issuerDn()}"></span>
+                                <a th:unless="${cert.selfSigned()}" class="small ms-2" th:href="@{/ui/certificates(q=${cert.akiHex()})}">발급자 CA 보기</a>
+                                <span th:if="${cert.selfSigned()}" class="badge text-bg-light ms-2">자체 서명</span></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">일련번호</th><td class="mono" th:text="${cert.serialHex()}"></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">유효기간</th>
+                            <td><span th:text="${cert.notBefore()}"></span> ~ <span th:text="${cert.notAfter()}"></span>
+                                <span class="small text-secondary ms-2" th:if="${cert.daysLeft() >= 0}" th:text="'(' + ${cert.daysLeft()} + '일 남음)'"></span></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">SKI</th><td class="mono" th:text="${cert.skiHex()}"></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">AKI</th><td class="mono" th:text="${cert.akiHex()}"></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">키 · 서명</th>
+                            <td><span class="badge text-bg-light" th:text="${cert.keyAlgorithm()}"></span>
+                                <span class="badge text-bg-light" th:text="${cert.signatureAlgorithm()}"></span></td></tr>
+                        <tr th:if="${cert.ca()}"><th class="text-secondary fw-normal ps-3">pathLen</th>
+                            <td th:text="${cert.pathLenConstraint() == null} ? '제한 없음' : ${cert.pathLenConstraint()}"></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">키 용도</th>
+                            <td><span th:each="ku : ${cert.keyUsages()}" class="badge text-bg-secondary me-1" th:text="${ku.name()}"></span>
+                                <span th:if="${cert.keyUsages().isEmpty()}" class="text-secondary">-</span></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">확장 키 용도</th>
+                            <td><span th:each="eku : ${cert.extendedKeyUsages()}" class="badge text-bg-light border me-1 mono" th:text="${eku}"></span>
+                                <span th:if="${cert.extendedKeyUsages().isEmpty()}" class="text-secondary">-</span></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">trackingId</th><td class="mono" th:text="${cert.trackingId()}"></td></tr>
+                        <tr th:if="${cert.revocationReason()}" class="table-danger"><th class="fw-normal ps-3">폐기</th>
+                            <td><strong th:text="${cert.revocationReason()}"></strong> · <span th:text="${cert.revokedAt()}"></span></td></tr>
+                        <tr><th class="text-secondary fw-normal ps-3">저장 시각</th><td th:text="${cert.createdAt()}"></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-clock-history me-2"></i><strong>생명주기 이력</strong>
+                        <span class="text-secondary small ms-2">같은 trackingId 를 가진 인증서 <span th:text="${lineage.size()}">1</span>개</span></span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light"><tr><th class="ps-3">#</th><th>SKI</th><th>일련번호</th><th>유효기간</th><th>상태</th><th>저장 시각</th></tr></thead>
+                        <tbody>
+                        <tr th:each="member, iter : ${lineage}" class="row-link" style="cursor:pointer" th:data-href="${member.detailUrl()}"
+                            th:classappend="${member.id() == cert.id()} ? 'lineage-current'">
+                            <td class="ps-3">
+                                <span th:text="${iter.count}">1</span>
+                                <span th:if="${iter.first}" class="badge text-bg-light border ms-1">최초 발급</span>
+                                <span th:if="${member.id() == cert.id()}" class="badge text-bg-primary ms-1">현재</span>
+                            </td>
+                            <td class="mono small" th:text="${#strings.substring(member.skiHex(), 0, 12)} + '…'"></td>
+                            <td class="mono small"><a th:href="${member.detailUrl()}" th:title="${member.serialHex()}" th:text="${#strings.abbreviate(member.serialHex(), 15)}"></a></td>
+                            <td class="small text-nowrap" th:text="${member.notBefore()} + ' ~ ' + ${member.notAfter()}"></td>
+                            <td><span th:replace="~{fragments :: status(${member.status()})}"></span>
+                                <span class="small text-danger d-block" th:if="${member.revocationReason()}" th:text="${member.revocationReason()}"></span></td>
+                            <td class="small text-nowrap" th:text="${member.createdAt()}"></td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-footer bg-white small text-secondary">
+                    갱신은 원본을 덮어쓰지 않고 새 인증서를 저장합니다. 키와 SKI, 일련번호가 바뀌어도 trackingId 로 같은 인증서의 이력을 추적합니다.
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-file-earmark-code me-2"></i><strong>PEM</strong></span>
+                    <button class="btn btn-sm btn-outline-secondary" data-copy-target="#pem"><i class="bi bi-clipboard"></i> 복사</button>
+                </div>
+                <div class="card-body"><textarea id="pem" class="form-control pem" rows="10" readonly th:text="${cert.pem()}"></textarea></div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-4" th:if="${cert.valid()}">
+                <div class="card-header bg-white"><i class="bi bi-arrow-repeat me-2"></i><strong>갱신</strong></div>
+                <div class="card-body">
+                    <div th:switch="${cert.certType().name()}">
+                        <form th:case="'ROOT'" method="post" th:action="${cert.detailUrl()} + '/renewal/root'">
+                            <p class="small text-secondary">새 키를 만들어 같은 주체로 자체 서명합니다. Root 는 폐기할 수 없어 원본도 유효하게 남습니다.</p>
+                            <div th:replace="~{certificate :: renewalPeriod}"></div>
+                            <button class="btn btn-dark w-100"><i class="bi bi-key me-1"></i>새 키로 Root 갱신</button>
+                        </form>
+                        <form th:case="'SUB'" method="post" th:action="${cert.detailUrl()} + '/renewal/sub-ca'">
+                            <p class="small text-secondary">새 키를 만들고 주체와 확장은 원본에서 가져옵니다.</p>
+                            <div th:replace="~{certificate :: renewalPeriod}"></div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="revokeOriginalCertificate" value="true" id="revokeSub" checked>
+                                <label class="form-check-label" for="revokeSub">원본을 SUPERSEDED 로 폐기</label>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="useLatestIssuer" value="true" id="latestIssuer">
+                                <label class="form-check-label" for="latestIssuer">발급자 계보의 최신 CA 로 서명</label>
+                                <div class="form-text">발급자가 갱신되었다면 새 발급자가 서명합니다.</div>
+                            </div>
+                            <button class="btn btn-primary w-100"><i class="bi bi-key me-1"></i>새 키로 Sub CA 갱신</button>
+                        </form>
+                        <form th:case="*" method="post" th:action="${cert.detailUrl()} + '/renewal/leaf'">
+                            <p class="small text-secondary">주체와 확장은 원본에서 가져옵니다. 새 공개키를 넣지 않으면 원본 공개키로 발급합니다.</p>
+                            <div th:replace="~{certificate :: renewalPeriod}"></div>
+                            <div class="mb-2">
+                                <label class="form-label small">새 공개키 (선택)</label>
+                                <textarea name="publicKeyPem" class="form-control pem" rows="4" placeholder="-----BEGIN PUBLIC KEY-----"></textarea>
+                                <div class="form-text">원본과 같은 키 알고리즘(<span th:text="${cert.keyAlgorithm()}"></span>)이어야 합니다.</div>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="revokeOriginalCertificate" value="true" id="revokeLeaf">
+                                <label class="form-check-label" for="revokeLeaf">원본을 SUPERSEDED 로 폐기</label>
+                            </div>
+                            <button class="btn btn-info text-white w-100"><i class="bi bi-arrow-repeat me-1"></i>Leaf 갱신</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4" th:if="${cert.certType().name() == 'SUB' and (cert.valid() or cert.status().name() == 'PENDING')}">
+                <div class="card-header bg-white"><i class="bi bi-x-octagon me-2 text-danger"></i><strong>폐기</strong></div>
+                <div class="card-body">
+                    <p class="small text-secondary">폐기한 CA 로는 더 이상 발급할 수 없습니다. 이미 발급한 하위 인증서는 그대로 둡니다.</p>
+                    <button class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#revokeModal"><i class="bi bi-x-octagon me-1"></i>Sub CA 폐기</button>
+                </div>
+            </div>
+
+            <div class="card mb-4" th:if="${cert.certType().name() == 'ROOT'}">
+                <div class="card-body small text-secondary"><i class="bi bi-lock me-1"></i>Root 인증서는 폐기할 수 없습니다.</div>
+            </div>
+            <div class="card mb-4" th:if="${cert.certType().name() == 'LEAF'}">
+                <div class="card-body small text-secondary"><i class="bi bi-hourglass me-1"></i>Leaf 폐기는 아직 지원하지 않습니다.</div>
+            </div>
+            <div class="card mb-4" th:unless="${cert.valid()}">
+                <div class="card-body small text-secondary"><i class="bi bi-info-circle me-1"></i>유효한(VALID) 인증서만 갱신할 수 있습니다.</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-white"><i class="bi bi-terminal me-2"></i><strong>REST API</strong></div>
+                <div class="card-body small">
+                    <div class="mb-1 text-secondary">다운로드</div>
+                    <code class="mono d-block" th:text="'GET ' + ${cert.downloadUrl('pem')}"></code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="revokeModal" tabindex="-1" th:if="${cert.certType().name() == 'SUB'}">
+        <div class="modal-dialog">
+            <form class="modal-content" method="post" th:action="${cert.detailUrl()} + '/revocation'">
+                <div class="modal-header"><h5 class="modal-title"><i class="bi bi-x-octagon text-danger me-2"></i>Sub CA 폐기</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <p><strong th:text="${cert.commonName()}"></strong> 을(를) 폐기합니다. 되돌릴 수 없습니다.</p>
+                    <label class="form-label">폐기 사유 (RFC 5280 CRLReason)</label>
+                    <select name="reason" class="form-select">
+                        <option th:each="reason : ${reasons}" th:value="${reason.code}" th:text="${reason.code} + ' · ' + ${reason.name()}"
+                                th:selected="${reason.name() == 'CESSATION_OF_OPERATION'}">reason</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button class="btn btn-danger">폐기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</main>
+
+<th:block th:if="false">
+    <div th:fragment="renewalPeriod">
+        <div class="row g-2 mb-3">
+            <div class="col-5">
+                <label class="form-label small">시작 앞당김(일)</label>
+                <input type="number" min="0" name="activationStartDaysAgo" value="0" class="form-control">
+            </div>
+            <div class="col-7">
+                <label class="form-label small">유효기간</label>
+                <input type="text" name="validityPeriod" class="form-control" placeholder="비우면 원본 길이 (예: P1Y)" pattern="^$|^P[1-9]\d*[YMD]$">
+            </div>
+        </div>
+        <div class="form-text mb-3">발급자 인증서의 유효기간을 벗어나면 거절됩니다.</div>
+    </div>
+</th:block>
+
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+</body>
+</html>

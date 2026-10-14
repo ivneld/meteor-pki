@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('프로파일')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('profiles')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <div>
+            <h1 class="h3 mb-1">인증서 프로파일</h1>
+            <p class="text-secondary mb-0">발급할 인증서의 종류, 키 알고리즘, 최대 유효기간, 확장을 정합니다.</p>
+        </div>
+        <div class="btn-group">
+            <a href="/ui/profiles/new?type=ROOT" class="btn btn-outline-dark">Root 프로파일</a>
+            <a href="/ui/profiles/new?type=SUB" class="btn btn-outline-primary">Sub CA 프로파일</a>
+            <a href="/ui/profiles/new?type=LEAF" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Leaf 프로파일</a>
+        </div>
+    </div>
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light"><tr><th>이름</th><th>종류</th><th>유효기간</th><th>키 알고리즘</th><th>키 용도</th><th>승인</th><th>생성</th></tr></thead>
+                <tbody>
+                <tr th:each="profile : ${page.profiles()}" class="row-link" style="cursor:pointer" th:data-href="@{/ui/profiles/detail(name=${profile.name})}">
+                    <td><a th:href="@{/ui/profiles/detail(name=${profile.name})}" class="fw-semibold text-decoration-none" th:text="${profile.name}">name</a></td>
+                    <td><span th:replace="~{fragments :: type(${profile.certType})}"></span></td>
+                    <td th:text="${profile.validityDuration.toPeriodString()}">P1Y</td>
+                    <td><span class="badge text-bg-light" th:text="${profile.keyAlgorithm.value()}">EC</span></td>
+                    <td class="small"><span th:each="ku : ${profile.keyUsages}" class="badge text-bg-secondary me-1" th:text="${ku.name()}"></span></td>
+                    <td><i th:if="${profile.requireApproval}" class="bi bi-person-check text-warning" title="승인 필요"></i></td>
+                    <td class="small text-nowrap" th:text="${@uiFormat.instant(profile.createdAt)}">date</td>
+                </tr>
+                <tr th:if="${page.profiles().isEmpty()}"><td colspan="7" class="text-center text-secondary py-5">프로파일이 없습니다. Root 프로파일부터 만들어 보세요.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+            <span class="small text-secondary" th:text="'전체 ' + ${page.totalElements()} + '개'">0</span>
+            <nav th:if="${page.totalPages() > 1}">
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item" th:each="index : ${#numbers.sequence(0, page.totalPages() - 1)}" th:classappend="${index == page.page()} ? 'active'">
+                        <a class="page-link" th:href="@{/ui/profiles(page=${index})}" th:text="${index + 1}">1</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+</main>
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+</body>
+</html>

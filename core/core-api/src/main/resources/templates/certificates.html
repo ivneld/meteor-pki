@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('인증서')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('certificates')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <div>
+            <h1 class="h3 mb-1">인증서</h1>
+            <p class="text-secondary mb-0">발급한 모든 인증서입니다. 갱신본은 새 행으로 쌓이고 같은 trackingId 로 묶입니다.</p>
+        </div>
+    </div>
+
+    <form class="card card-body mb-3" method="get" action="/ui/certificates">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">종류</label>
+                <select name="type" class="form-select">
+                    <option value="">전체</option>
+                    <option th:each="t : ${types}" th:value="${t.name()}" th:text="${t.name()}" th:selected="${type == t}">ROOT</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">상태</label>
+                <select name="status" class="form-select">
+                    <option value="">전체</option>
+                    <option th:each="s : ${statuses}" th:value="${s.name()}" th:text="${s.name()}" th:selected="${status == s}">VALID</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small text-secondary">검색</label>
+                <input type="search" name="q" class="form-control" th:value="${q}" placeholder="주체 DN, 일련번호, SKI, trackingId 앞부분">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-primary"><i class="bi bi-search me-1"></i>조회</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                <tr><th>종류</th><th>주체</th><th>일련번호</th><th>유효기간</th><th>상태</th><th>trackingId</th></tr>
+                </thead>
+                <tbody>
+                <tr th:each="cert : ${certs}" class="row-link" style="cursor:pointer" th:data-href="${cert.detailUrl()}">
+                    <td><span th:replace="~{fragments :: type(${cert.certType()})}"></span></td>
+                    <td class="dn">
+                        <a th:href="${cert.detailUrl()}" class="fw-semibold text-decoration-none" th:text="${cert.commonName()}">CN</a>
+                        <div class="small text-secondary text-truncate" th:text="${cert.subjectDn()}">DN</div>
+                    </td>
+                    <td class="mono small" th:text="${cert.serialHex()}">01</td>
+                    <td class="small text-nowrap"><span th:text="${cert.notBefore()}"></span><br><span th:text="${cert.notAfter()}"></span></td>
+                    <td>
+                        <span th:replace="~{fragments :: status(${cert.status()})}"></span>
+                        <div class="small text-danger" th:if="${cert.revocationReason()}" th:text="${cert.revocationReason()}">reason</div>
+                    </td>
+                    <td><a class="mono small" th:href="@{/ui/certificates(q=${cert.trackingId()})}" th:text="${cert.shortTrackingId()}">id</a></td>
+                </tr>
+                <tr th:if="${certs.isEmpty()}"><td colspan="6" class="text-center text-secondary py-5">조건에 맞는 인증서가 없습니다.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white small text-secondary" th:text="${certs.size()} + '건'">0건</div>
+    </div>
+</main>
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+</body>
+</html>

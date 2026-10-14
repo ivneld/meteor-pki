@@ -47,6 +47,14 @@ public class CertReader {
         return CaCertificates.latestPerChain(certRepository.findVisibleCas());
     }
 
+    public List<Cert> getAll() {
+        return certRepository.findAll();
+    }
+
+    public List<Cert> getLineage(String trackingId) {
+        return certRepository.findLineage(trackingId);
+    }
+
     public Cert get(KeyIdentifier authorityKeyId, SerialNumber serialNumber) {
         return certRepository.findBySerialNumber(authorityKeyId, serialNumber)
             .orElseThrow(() -> new CoreException(ErrorCode.CERT_RESOURCE_NOT_FOUND, "Certificate not found.")

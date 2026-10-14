@@ -22,6 +22,10 @@ public interface CertJpaRepository extends JpaRepository<CertEntity, Long> {
 
     List<CertEntity> findAllByCertTypeInAndHiddenFalse(Collection<CertType> certTypes);
 
+    List<CertEntity> findAllByOrderByCreatedAtDescIdDesc();
+
+    List<CertEntity> findAllByTrackingIdOrderByCreatedAtAscIdAsc(String trackingId);
+
     Optional<CertEntity> findBySerialNumberAndAki(String serialNumber, String aki);
 
 }

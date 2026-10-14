@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Root CA 발급')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('issue')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h1 class="h3 mb-1"><i class="bi bi-diagram-3 me-2"></i>Root CA 발급</h1>
+            <p class="text-secondary">서버가 키를 만들고 자체 서명합니다. 개인키는 서버의 키 보관소에 남습니다.</p>
+            <div th:if="${profiles.isEmpty()}" class="alert alert-warning">
+                ROOT 프로파일이 없습니다. <a href="/ui/profiles/new?type=ROOT" class="alert-link">Root 프로파일 만들기</a>
+            </div>
+            <form class="card" method="post" action="/ui/issue/root">
+                <div class="card-body">
+                    <div th:replace="~{issue-root :: profileSelect(${profiles}, ${form.certProfileId()}, 'ROOT')}"></div>
+                    <div class="mb-3">
+                        <label class="form-label">주체 DN <span class="text-danger">*</span></label>
+                        <input name="subjectDn" class="form-control" required th:value="${form.subjectDn()}" placeholder="CN=Meteor Root CA,O=Meteor,C=KR">
+                    </div>
+                    <div th:replace="~{issue-root :: period(${form.validityPeriod()}, ${form.notBefore()})}"></div>
+                    <a class="small" data-bs-toggle="collapse" href="#advanced"><i class="bi bi-gear me-1"></i>고급 설정</a>
+                    <div class="collapse mt-3" id="advanced">
+                        <div class="mb-3">
+                            <label class="form-label">CRL 배포 지점</label>
+                            <textarea name="crlDps" class="form-control" rows="2" th:text="${form.crlDps()}" placeholder="한 줄에 하나씩 URL"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">OCSP URL</label>
+                            <textarea name="ocspUris" class="form-control" rows="2" th:text="${form.ocspUris()}" placeholder="한 줄에 하나씩 URL"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-white text-end">
+                    <button class="btn btn-dark" th:disabled="${profiles.isEmpty()}"><i class="bi bi-key me-1"></i>Root CA 발급</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</main>
+
+<th:block th:if="false">
+    <div th:fragment="profileSelect(profiles, selected, type)" class="mb-3">
+        <label class="form-label">프로파일 <span class="text-danger">*</span></label>
+        <select name="certProfileId" class="form-select" required>
+            <option value="">선택하세요</option>
+            <option th:each="profile : ${profiles}" th:value="${profile.id}" th:selected="${selected == profile.id}"
+                    th:text="${profile.name} + ' · ' + ${profile.validityDuration.toPeriodString()} + ' · ' + ${profile.keyAlgorithm.value()} + (${profile.requireApproval} ? ' · 승인 필요' : '')">profile</option>
+        </select>
+        <div class="form-text">키 알고리즘과 최대 유효기간, 확장은 프로파일을 따릅니다. <a th:href="@{/ui/profiles/new(type=${type})}">새 프로파일</a></div>
+    </div>
+    <div th:fragment="period(validityPeriod, notBefore)" class="row g-3 mb-3">
+        <div class="col-md-6">
+            <label class="form-label">유효기간</label>
+            <input name="validityPeriod" class="form-control" th:value="${validityPeriod}" placeholder="비우면 프로파일 기간 (예: P1Y, P6M, P90D)" pattern="^$|^P[1-9]\d*[YMD]$">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">시작 시각</label>
+            <input type="datetime-local" name="notBefore" class="form-control" th:value="${notBefore}">
+            <div class="form-text">비우면 지금</div>
+        </div>
+    </div>
+    <div th:fragment="issuerSelect(issuers, selected)" class="mb-3">
+        <label class="form-label">발급자 CA <span class="text-danger">*</span></label>
+        <select name="akiHex" class="form-select" required>
+            <option value="">선택하세요</option>
+            <option th:each="issuer : ${issuers}" th:value="${issuer.skiHex()}" th:selected="${selected == issuer.skiHex()}"
+                    th:text="${issuer.commonName()} + ' (' + ${issuer.certType().name()} + ', ~' + ${issuer.notAfter()} + ', SKI ' + ${#strings.substring(issuer.skiHex(), 0, 8)} + ')'">issuer</option>
+        </select>
+        <div class="form-text">요청한 유효기간이 발급자 인증서의 유효기간 안에 있어야 합니다.</div>
+    </div>
+    <div th:fragment="distribution(form)">
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="includeDefaultCrlDp" value="true" id="defaultCrl" th:checked="${form.includeDefaultCrlDp()}">
+            <label class="form-check-label" for="defaultCrl">기본 CRL 배포 지점 포함 (발급자 SKI 기준)</label>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">추가 CRL 배포 지점</label>
+            <textarea name="crlDps" class="form-control" rows="2" th:text="${form.crlDps()}" placeholder="한 줄에 하나씩 URL"></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">AIA caIssuers</label>
+            <textarea name="aiaCaIssuers" class="form-control" rows="2" th:text="${form.aiaCaIssuers()}" placeholder="한 줄에 하나씩 URL"></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">OCSP URL</label>
+            <textarea name="ocspUris" class="form-control" rows="2" th:text="${form.ocspUris()}" placeholder="한 줄에 하나씩 URL"></textarea>
+        </div>
+    </div>
+</th:block>
+
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+</body>
+</html>

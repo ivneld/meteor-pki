@@ -56,6 +56,17 @@ public class CertRepository {
             .map(CertRepository::toDomain);
     }
 
+    public List<Cert> findAll() {
+        return jpa.findAllByOrderByCreatedAtDescIdDesc().stream().map(CertRepository::toDomain).toList();
+    }
+
+    public List<Cert> findLineage(String trackingId) {
+        return jpa.findAllByTrackingIdOrderByCreatedAtAscIdAsc(trackingId)
+            .stream()
+            .map(CertRepository::toDomain)
+            .toList();
+    }
+
     public List<Cert> findVisibleCas() {
         return jpa.findAllByCertTypeInAndHiddenFalse(Cert.CA_TYPES).stream().map(CertRepository::toDomain).toList();
     }

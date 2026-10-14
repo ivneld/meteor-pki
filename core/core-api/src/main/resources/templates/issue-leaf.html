@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Leaf 발급')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('issue')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h1 class="h3 mb-1"><i class="bi bi-file-earmark-lock me-2"></i>Leaf 인증서 발급</h1>
+            <p class="text-secondary">개인키는 요청자가 갖고, 서버에는 CSR 이나 공개키만 보냅니다.</p>
+            <div th:if="${profiles.isEmpty()}" class="alert alert-warning">
+                LEAF 프로파일이 없습니다. <a href="/ui/profiles/new?type=LEAF" class="alert-link">Leaf 프로파일 만들기</a>
+            </div>
+            <div th:if="${issuers.isEmpty()}" class="alert alert-warning">
+                유효한 CA 가 없습니다. <a href="/ui/issue/root" class="alert-link">Root CA 발급</a>
+            </div>
+            <form class="card" method="post" action="/ui/issue/leaf">
+                <div class="card-body">
+                    <div th:replace="~{issue-root :: issuerSelect(${issuers}, ${form.akiHex()})}"></div>
+                    <div th:replace="~{issue-root :: profileSelect(${profiles}, ${form.certProfileId()}, 'LEAF')}"></div>
+
+                    <label class="form-label">요청 방식</label>
+                    <div class="btn-group w-100 mb-3" role="group">
+                        <input type="radio" class="btn-check" name="mode" id="modeCsr" value="csr" th:checked="${form.usesCsr()}">
+                        <label class="btn btn-outline-primary" for="modeCsr"><i class="bi bi-file-earmark-text me-1"></i>CSR (PKCS#10)</label>
+                        <input type="radio" class="btn-check" name="mode" id="modeKey" value="key" th:checked="${!form.usesCsr()}">
+                        <label class="btn btn-outline-primary" for="modeKey"><i class="bi bi-key me-1"></i>공개키 + 주체 DN</label>
+                    </div>
+
+                    <div id="csrFields" class="mb-3">
+                        <label class="form-label">CSR (PEM) <span class="text-danger">*</span></label>
+                        <textarea name="csrPem" class="form-control pem" rows="8" th:text="${form.csrPem()}" placeholder="-----BEGIN CERTIFICATE REQUEST-----"></textarea>
+                        <div class="form-text">주체 DN 과 SAN 은 CSR 의 것을 씁니다. 예: <code>openssl req -new -key device.key -subj "/CN=api.example.com" -addext "subjectAltName=DNS:api.example.com"</code></div>
+                    </div>
+                    <div id="keyFields" class="mb-3">
+                        <div class="mb-3">
+                            <label class="form-label">주체 DN <span class="text-danger">*</span></label>
+                            <input name="subjectDn" class="form-control" th:value="${form.subjectDn()}" placeholder="CN=www.example.com,O=Meteor">
+                        </div>
+                        <label class="form-label">공개키 (PEM) <span class="text-danger">*</span></label>
+                        <textarea name="publicKeyPem" class="form-control pem" rows="5" th:text="${form.publicKeyPem()}" placeholder="-----BEGIN PUBLIC KEY-----"></textarea>
+                        <div class="form-text">SAN 은 프로파일 템플릿을 씁니다. 예: <code>openssl pkey -in device.key -pubout</code></div>
+                    </div>
+
+                    <div th:replace="~{issue-root :: period(${form.validityPeriod()}, ${form.notBefore()})}"></div>
+                    <a class="small" data-bs-toggle="collapse" href="#advanced"><i class="bi bi-gear me-1"></i>CRL·AIA·OCSP 설정</a>
+                    <div class="collapse mt-3" id="advanced">
+                        <div th:replace="~{issue-root :: distribution(${form})}"></div>
+                    </div>
+                </div>
+                <div class="card-footer bg-white text-end">
+                    <button class="btn btn-info text-white" th:disabled="${profiles.isEmpty() or issuers.isEmpty()}"><i class="bi bi-file-earmark-lock me-1"></i>Leaf 발급</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</main>
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+<script>
+    function toggleMode() {
+        var csr = document.getElementById('modeCsr').checked;
+        document.getElementById('csrFields').classList.toggle('d-none', !csr);
+        document.getElementById('keyFields').classList.toggle('d-none', csr);
+    }
+    document.querySelectorAll('input[name="mode"]').forEach(function (radio) { radio.addEventListener('change', toggleMode); });
+    toggleMode();
+</script>
+</body>
+</html>

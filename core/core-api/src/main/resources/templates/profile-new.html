@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('새 프로파일')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('profiles')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+    <div class="row justify-content-center">
+        <div class="col-lg-9">
+            <h1 class="h3 mb-1"><i class="bi bi-sliders me-2"></i>새 인증서 프로파일</h1>
+            <p class="text-secondary">프로파일은 만든 뒤 바꿀 수 없습니다.</p>
+            <form class="card" method="post" action="/ui/profiles">
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">이름 <span class="text-danger">*</span></label>
+                            <input name="name" class="form-control" required th:value="${form.name()}" placeholder="TLS Server">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">종류 <span class="text-danger">*</span></label>
+                            <select name="certType" id="certType" class="form-select">
+                                <option th:each="t : ${types}" th:value="${t.name()}" th:text="${t.name()}" th:selected="${form.certType() == t}">LEAF</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">최대 유효기간 <span class="text-danger">*</span></label>
+                            <input name="validityPeriod" class="form-control" required pattern="^P[1-9]\d*[YMD]$" th:value="${form.validityPeriod()}" placeholder="P1Y">
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">키 알고리즘 <span class="text-danger">*</span></label>
+                            <select name="keyAlgorithmSpec" class="form-select">
+                                <option th:each="alg : ${keyAlgorithms}" th:value="${alg}" th:text="${alg}" th:selected="${form.keyAlgorithmSpec() == alg}">EC-P-256</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="pathLenGroup">
+                            <label class="form-label">pathLenConstraint</label>
+                            <input type="number" min="0" name="pathLenConstraint" class="form-control" th:value="${form.pathLenConstraint()}" placeholder="비우면 제한 없음 (Sub CA 만)">
+                            <div class="form-text">0 이면 이 CA 아래에는 Leaf 만 발급할 수 있습니다.</div>
+                        </div>
+                    </div>
+
+                    <label class="form-label">키 용도</label>
+                    <div class="row row-cols-2 row-cols-md-3 g-1 mb-2">
+                        <div class="col" th:each="ku : ${keyUsages}">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="keyUsages" th:value="${ku.name()}" th:id="'ku-' + ${ku.name()}" th:checked="${form.hasKeyUsage(ku)}">
+                                <label class="form-check-label small" th:for="'ku-' + ${ku.name()}" th:text="${ku.name()}">KU</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="keyUsageCritical" value="true" id="kuCritical" th:checked="${form.keyUsageCritical()}">
+                        <label class="form-check-label small" for="kuCritical">키 용도를 critical 로 표시</label>
+                    </div>
+
+                    <div id="ekuGroup">
+                        <label class="form-label">확장 키 용도 (EKU) <a href="/ui/ekus" class="small ms-2">EKU 관리</a></label>
+                        <div class="row row-cols-1 row-cols-md-2 g-1 mb-3">
+                            <div class="col" th:each="eku : ${ekus}">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="ekuOids" th:value="${eku.oid}" th:id="'eku-' + ${eku.id}" th:checked="${form.hasEku(eku.oid)}">
+                                    <label class="form-check-label small" th:for="'eku-' + ${eku.id}"><span th:text="${eku.purpose}"></span> <span class="mono text-secondary" th:text="${eku.oid}"></span></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="sanGroup">
+                        <label class="form-label">SAN 템플릿</label>
+                        <input name="subjectAltName" class="form-control" th:value="${form.subjectAltName()}" placeholder="DNS:www.example.com,IP:10.0.0.1">
+                        <div class="form-text">공개키로 Leaf 를 발급할 때 넣는 SAN 입니다. CSR 로 발급하면 CSR 의 SAN 을 씁니다.</div>
+                    </div>
+
+                    <a class="small" data-bs-toggle="collapse" href="#advanced"><i class="bi bi-gear me-1"></i>정책·OCSP·승인</a>
+                    <div class="collapse mt-3" id="advanced">
+                        <div class="mb-3">
+                            <label class="form-label">인증서 정책 OID</label>
+                            <textarea name="policyOids" class="form-control" rows="2" th:text="${form.policyOids()}" placeholder="한 줄에 하나씩 OID"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">OCSP URL</label>
+                            <textarea name="ocspUris" class="form-control" rows="2" th:text="${form.ocspUris()}" placeholder="한 줄에 하나씩 URL"></textarea>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="useDefaultOcspUri" value="true" id="defaultOcsp" th:checked="${form.useDefaultOcspUri()}">
+                            <label class="form-check-label" for="defaultOcsp">기본 OCSP URL 포함</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="useDefaultAiaCaIssuer" value="true" id="defaultAia" th:checked="${form.useDefaultAiaCaIssuer()}">
+                            <label class="form-check-label" for="defaultAia">기본 AIA caIssuers (발급자 인증서 주소) 포함</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="requireApproval" value="true" id="approval" th:checked="${form.requireApproval()}">
+                            <label class="form-check-label" for="approval">발급 승인 필요 (Leaf 를 PENDING 으로 저장)</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-white text-end">
+                    <a href="/ui/profiles" class="btn btn-link">취소</a>
+                    <button class="btn btn-primary"><i class="bi bi-check2 me-1"></i>프로파일 만들기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</main>
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+<script>
+    function toggleType() {
+        var type = document.getElementById('certType').value;
+        document.getElementById('pathLenGroup').classList.toggle('d-none', type !== 'SUB');
+        document.getElementById('sanGroup').classList.toggle('d-none', type !== 'LEAF');
+    }
+    document.getElementById('certType').addEventListener('change', toggleType);
+    toggleType();
+</script>
+</body>
+</html>

@@ -41,6 +41,8 @@ class ArchitectureRules {
 
     private static final String API = "com.meteor.pki.api..";
 
+    private static final String UI = "com.meteor.pki.ui..";
+
     private static final String API_REQUEST = "com.meteor.pki.api.request..";
 
     private static final String API_RESPONSE = "com.meteor.pki.api.response..";
@@ -70,8 +72,8 @@ class ArchitectureRules {
         .resideInAPackage(DOMAIN)
         .should()
         .dependOnClassesThat()
-        .resideInAnyPackage(USECASE, API, CLIENT)
-        .as("R-01 domain 은 usecase, api, client 를 모른다. 외부 연동과 여러 도메인을 엮는 흐름은 usecase 가 한다");
+        .resideInAnyPackage(USECASE, API, UI, CLIENT)
+        .as("R-01 domain 은 usecase, api, ui, client 를 모른다. 외부 연동과 여러 도메인을 엮는 흐름은 usecase 가 한다");
 
     @ArchTest
     static final ArchRule R01_domain_uses_only_error_vocabulary_from_support = noClasses().that()
@@ -93,8 +95,8 @@ class ArchitectureRules {
         .resideInAPackage(USECASE)
         .should()
         .dependOnClassesThat()
-        .resideInAPackage(API)
-        .as("R-02 usecase 는 api 를 모른다");
+        .resideInAnyPackage(API, UI)
+        .as("R-02 usecase 는 api 와 ui 를 모른다");
 
     @ArchTest
     static final ArchRule R02_adapters_do_not_know_core = noClasses().that()
@@ -234,19 +236,19 @@ class ArchitectureRules {
 
     @ArchTest
     static final ArchRule R10_api_depends_on_use_cases_and_domain_services_only = noClasses().that()
-        .resideInAPackage(API)
+        .resideInAnyPackage(API, UI)
         .should()
         .dependOnClassesThat(resideInAnyPackage(STORAGE, CLIENT).or(repositories())
             .or(resideInAPackage(DOMAIN).and(simpleNameEndingWith("Policy"))))
-        .as("R-10 api 는 *Repository, *Policy, storage, client 를 쓰지 않는다. *UseCase 나 *Reader / *Writer 를 부른다");
+        .as("R-10 api 와 ui 는 *Repository, *Policy, storage, client 를 쓰지 않는다. *UseCase 나 *Reader / *Writer 를 부른다");
 
     @ArchTest
     static final ArchRule R10_api_only_reads_aggregates = noClasses().that()
-        .resideInAPackage(API)
+        .resideInAnyPackage(API, UI)
         .should()
         .callMethodWhere(DescribedPredicate.describe("a state-changing method of a domain aggregate",
                 (JavaMethodCall call) -> isAggregate(call.getTargetOwner()) && !isAccessor(call.getTarget().getName())))
-        .as("R-10 api 는 돌려받은 애그리거트에서 getter 만 읽는다. 상태를 바꾸는 메서드는 부르지 않는다");
+        .as("R-10 api 와 ui 는 돌려받은 애그리거트에서 getter 만 읽는다. 상태를 바꾸는 메서드는 부르지 않는다");
 
     @ArchTest
     static final ArchRule R11_endpoint_calls_one_use_case_or_domain_service = methods().that()

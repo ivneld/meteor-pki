@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('오류')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('')}"></nav>
+<main class="container-xl pb-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-exclamation-octagon display-4 text-danger d-block mb-3"></i>
+                    <h1 class="h4" th:text="${error.message()}">오류</h1>
+                    <span class="badge text-bg-danger" th:text="${error.code()}">CODE</span>
+                    <ul class="list-unstyled small text-secondary mt-3 mb-0" th:unless="${error.details().isEmpty()}">
+                        <li th:each="entry : ${error.details()}"><code th:text="${entry.key}"></code>: <span class="mono" th:text="${entry.value}"></span></li>
+                    </ul>
+                    <a href="/ui" class="btn btn-outline-primary mt-4">대시보드로</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+</body>
+</html>

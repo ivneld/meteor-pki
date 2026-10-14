@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head(${profile.name})}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('profiles')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+    <nav aria-label="breadcrumb"><ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="/ui/profiles">프로파일</a></li>
+        <li class="breadcrumb-item active" th:text="${profile.name}">name</li>
+    </ol></nav>
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <span th:replace="~{fragments :: type(${profile.certType})}"></span>
+            <h1 class="h3 mb-0" th:text="${profile.name}">name</h1>
+        </div>
+        <div th:switch="${profile.certType.name()}">
+            <a th:case="'ROOT'" th:href="@{/ui/issue/root(certProfileId=${profile.id})}" class="btn btn-dark"><i class="bi bi-key me-1"></i>이 프로파일로 Root 발급</a>
+            <a th:case="'SUB'" th:href="@{/ui/issue/sub-ca(certProfileId=${profile.id})}" class="btn btn-primary"><i class="bi bi-key me-1"></i>이 프로파일로 Sub CA 발급</a>
+            <a th:case="*" th:href="@{/ui/issue/leaf(certProfileId=${profile.id})}" class="btn btn-info text-white"><i class="bi bi-key me-1"></i>이 프로파일로 Leaf 발급</a>
+        </div>
+    </div>
+    <div class="card">
+        <table class="table mb-0">
+            <tbody>
+            <tr><th class="text-secondary fw-normal w-25 ps-3">최대 유효기간</th><td th:text="${profile.validityDuration.toPeriodString()}"></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">키 알고리즘</th><td th:text="${profile.keyAlgorithm.value()}"></td></tr>
+            <tr th:if="${profile.ca}"><th class="text-secondary fw-normal ps-3">pathLen</th><td th:text="${profile.pathLenConstraint == null} ? '제한 없음' : ${profile.pathLenConstraint}"></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">키 용도</th>
+                <td><span th:each="ku : ${profile.keyUsages}" class="badge text-bg-secondary me-1" th:text="${ku.name()}"></span>
+                    <span th:if="${profile.keyUsageCritical}" class="badge text-bg-warning">critical</span>
+                    <span th:if="${profile.keyUsages.isEmpty()}" class="text-secondary">-</span></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">확장 키 용도</th>
+                <td><div th:each="eku : ${profile.extendedKeyUsages}"><span class="mono" th:text="${eku.oid()}"></span> <span class="text-secondary small" th:text="${eku.purpose()}"></span></div>
+                    <span th:if="${profile.extendedKeyUsages.isEmpty()}" class="text-secondary">-</span></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">SAN 템플릿</th><td class="mono" th:text="${profile.subjectAltNameTemplate.csv().isEmpty()} ? '-' : ${profile.subjectAltNameTemplate.csv()}"></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">인증서 정책</th><td class="mono" th:text="${profile.certificatePolicies == null} ? '-' : ${#strings.listJoin(profile.certificatePolicies.oids(), ', ')}"></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">OCSP URL</th><td class="mono" th:text="${profile.ocspUris.isEmpty()} ? '-' : ${#strings.listJoin(profile.ocspUris, ', ')}"></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">기본 AIA caIssuers</th><td th:text="${profile.useDefaultAiaCaIssuer} ? '포함' : '없음'"></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">승인 필요</th><td th:text="${profile.requireApproval} ? '예 (PENDING 으로 저장)' : '아니오'"></td></tr>
+            <tr><th class="text-secondary fw-normal ps-3">생성</th><td th:text="${@uiFormat.instant(profile.createdAt)}"></td></tr>
+            </tbody>
+        </table>
+    </div>
+</main>
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+</body>
+</html>

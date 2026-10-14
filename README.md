@@ -1,7 +1,7 @@
 # x509-pki
 
 `v2x-pki/x509` 의 기능(x509-crypto, x509-domain, x509-ra, x509-support, x509-va)을
-[meteor-template](https://github.com/ivneld/meteor-template) 구조 위에 다시 구현하는 프로젝트. 뷰 없이 API 만 제공한다.
+[meteor-template](https://github.com/ivneld/meteor-template) 구조 위에 다시 구현하는 프로젝트. REST API 와, 같은 기능을 쓰는 웹 화면(Thymeleaf + Bootstrap)을 제공한다.
 
 ## 진행 상황
 
@@ -10,6 +10,7 @@
 | x509-ra API 계약 (경로, 메서드, 미디어 타입, 요청·응답 DTO, 검증, 오류 응답 모양) | 완료 |
 | x509-ra 동작: 인증서 프로파일·EKU, CA 체인(Root, Sub CA, 조회, 다운로드), Leaf 발급(SPKI, CSR) | 완료 |
 | x509-ra 동작: Root·Sub CA 갱신(새 키), Leaf 갱신, Sub CA 폐기, 갱신 이력(trackingId), 발급자 유효기간 안에서만 발급·갱신 | 완료 |
+| 웹 화면: 대시보드(CA 계층), 인증서 목록·상세·생명주기 이력, Root·Sub CA·Leaf 발급, 갱신, Sub CA 폐기, 프로파일, EKU | 완료 |
 | x509-ra 동작: Leaf 폐기, CRL, CMP, 키 합의·동기화, 통계, 보안 | 예정. 지금은 501 |
 | x509-va, x509-crypto, x509-domain, x509-support | 예정 |
 
@@ -23,7 +24,7 @@
 x509-pki
 ├── core
 │   ├── core-enum       com.meteor.pki.enums. API 와 저장소가 함께 쓰는 enum (CertType, KeyUsage, StatType ...)
-│   └── core-api        유일한 실행 모듈. domain / usecase / api + support(에러 어휘, 웹 설정, 어드바이스)
+│   └── core-api        유일한 실행 모듈. domain / usecase / api / ui(웹 화면) + support(에러 어휘, 웹 설정, 어드바이스)
 ├── clients
 │   └── client-crypto   client.crypto. 키 생성과 서명(HSM/KMS 자리). 개인키는 이 모듈 밖으로 나가지 않는다
 ├── storage
@@ -43,7 +44,8 @@ x509-pki
 ```
 
 계층과 규칙은 템플릿을 그대로 따른다. 코드는 `domain`, `usecase`, `api` 세 계층이고, 규칙은 애그리거트와 `*Policy` 에, 저장소 호출은
-`*Reader` / `*Writer` 에, 여러 도메인 서비스를 엮거나 외부 시스템을 부르는 흐름은 `*UseCase` 에 둔다. 전체 규칙은
+`*Reader` / `*Writer` 에, 여러 도메인 서비스를 엮거나 외부 시스템을 부르는 흐름은 `*UseCase` 에 둔다. 웹 화면 `ui` 는 `api` 와 같은
+바깥 계층이라 `*UseCase` 나 `*Reader` / `*Writer` 만 부르고 애그리거트는 읽기만 한다. 전체 규칙은
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), 구조 규칙은 `./gradlew test` 의 `ArchitectureRules` 가 검사한다.
 
 ## 원본과 맞춘 것
@@ -61,6 +63,18 @@ x509-pki
 ./gradlew :core:core-api:bootRun
 scripts/api-scenario.sh              # 다른 터미널에서. 프로파일 → Root → Sub CA → Leaf → 조회·다운로드 → 오류 응답
 ```
+
+웹 화면은 http://localhost:8080/ui (`/` 는 `/ui` 로 보낸다). Bootstrap 과 아이콘은 jsDelivr CDN 에서 받는다. local 프로필은 H2 메모리
+DB 라 재기동하면 데이터가 사라지므로, 빈 화면이 싫으면 `scripts/api-scenario.sh` 로 예시 데이터를 넣는다.
+
+| 화면 | 경로 | 하는 일 |
+|---|---|---|
+| 대시보드 | `/ui` | 상태별 건수, CA 계층 트리(갱신한 CA 포함), 최근 발급, 30일 안에 만료 |
+| 인증서 | `/ui/certificates` | 종류·상태·검색(주체, 일련번호, SKI, trackingId) |
+| 인증서 상세 | `/ui/certificates/{akiHex}/{serialHex}` | 정보, 같은 trackingId 의 생명주기 이력, PEM·DER 다운로드, 종류별 갱신, Sub CA 폐기 |
+| 발급 | `/ui/issue/root`, `/ui/issue/sub-ca`, `/ui/issue/leaf` | Leaf 는 CSR 또는 공개키 PEM |
+| 프로파일 | `/ui/profiles`, `/ui/profiles/new` | 목록, 상세, 생성 |
+| EKU | `/ui/ekus` | 목록, 등록 |
 
 ```bash
 ./gradlew test                       # CI 기본. ArchUnit, API 계약 포함

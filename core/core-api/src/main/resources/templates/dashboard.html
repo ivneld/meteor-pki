@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('대시보드')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav('dashboard')}"></nav>
+<main class="container-xl pb-5">
+    <div th:replace="~{fragments :: alerts}"></div>
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h1 class="h3 mb-1">대시보드</h1>
+            <p class="text-secondary mb-0">CA 계층과 인증서 상태를 한눈에 봅니다.</p>
+        </div>
+        <div class="btn-group">
+            <a href="/ui/issue/root" class="btn btn-dark"><i class="bi bi-diagram-3 me-1"></i>Root 발급</a>
+            <a href="/ui/issue/sub-ca" class="btn btn-primary"><i class="bi bi-diagram-2 me-1"></i>Sub CA 발급</a>
+            <a href="/ui/issue/leaf" class="btn btn-info text-white"><i class="bi bi-file-earmark-lock me-1"></i>Leaf 발급</a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="/ui/certificates"><div class="card stat-card h-100"><div class="card-body">
+                <div class="text-secondary small">CA 인증서</div><div class="display-6" th:text="${stats.ca}">0</div></div></div></a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="/ui/certificates?type=LEAF"><div class="card stat-card h-100"><div class="card-body">
+                <div class="text-secondary small">Leaf 인증서</div><div class="display-6" th:text="${stats.leaf}">0</div></div></div></a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="/ui/certificates?status=VALID"><div class="card stat-card h-100 border-start border-success border-4"><div class="card-body">
+                <div class="text-secondary small">유효</div><div class="display-6 text-success" th:text="${stats.valid}">0</div></div></div></a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="/ui/certificates?status=PENDING"><div class="card stat-card h-100 border-start border-warning border-4"><div class="card-body">
+                <div class="text-secondary small">승인 대기</div><div class="display-6 text-warning" th:text="${stats.pending}">0</div></div></div></a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="/ui/certificates?status=REVOKED"><div class="card stat-card h-100 border-start border-danger border-4"><div class="card-body">
+                <div class="text-secondary small">폐기</div><div class="display-6 text-danger" th:text="${stats.revoked}">0</div></div></div></a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="/ui/certificates?status=EXPIRED"><div class="card stat-card h-100 border-start border-secondary border-4"><div class="card-body">
+                <div class="text-secondary small">만료</div><div class="display-6 text-secondary" th:text="${stats.expired}">0</div></div></div></a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-7">
+            <div class="card h-100">
+                <div class="card-header bg-white"><i class="bi bi-diagram-3 me-2"></i><strong>CA 계층</strong>
+                    <span class="text-secondary small ms-2">갱신한 CA 는 새 키로 따로 표시됩니다</span></div>
+                <div class="card-body">
+                    <div th:if="${forest.isEmpty()}" class="text-center text-secondary py-5">
+                        <i class="bi bi-inboxes display-5 d-block mb-3"></i>
+                        아직 CA 가 없습니다. <a href="/ui/profiles/new?type=ROOT">Root 프로파일</a>을 만들고 <a href="/ui/issue/root">Root CA</a>를 발급하세요.
+                    </div>
+                    <ul class="tree">
+                        <th:block th:each="node : ${forest}">
+                            <li th:replace="~{dashboard :: node(${node})}"></li>
+                        </th:block>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-5">
+            <div class="card mb-4">
+                <div class="card-header bg-white"><i class="bi bi-clock-history me-2"></i><strong>최근 발급</strong></div>
+                <div class="list-group list-group-flush">
+                    <a th:each="cert : ${recent}" th:href="${cert.detailUrl()}" class="list-group-item list-group-item-action">
+                        <div class="d-flex justify-content-between align-items-center gap-2">
+                            <div class="text-truncate">
+                                <span th:replace="~{fragments :: type(${cert.certType()})}"></span>
+                                <span class="ms-1" th:text="${cert.commonName()}">CN</span>
+                            </div>
+                            <span th:replace="~{fragments :: status(${cert.status()})}"></span>
+                        </div>
+                        <div class="small text-secondary mt-1">발급 <span th:text="${cert.createdAt()}"></span> · 만료 <span th:text="${cert.notAfter()}"></span></div>
+                    </a>
+                    <div th:if="${recent.isEmpty()}" class="list-group-item text-secondary">발급한 인증서가 없습니다.</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header bg-white"><i class="bi bi-hourglass-split me-2 text-warning"></i><strong>30일 안에 만료</strong></div>
+                <div class="list-group list-group-flush">
+                    <a th:each="cert : ${expiring}" th:href="${cert.detailUrl()}" class="list-group-item list-group-item-action d-flex justify-content-between">
+                        <span class="text-truncate" th:text="${cert.commonName()}">CN</span>
+                        <span class="badge text-bg-warning" th:text="${cert.daysLeft()} + '일 남음'">3일</span>
+                    </a>
+                    <div th:if="${expiring.isEmpty()}" class="list-group-item text-secondary">곧 만료되는 인증서가 없습니다.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<th:block th:if="false">
+<li th:fragment="node(node)">
+    <div class="tree-node">
+        <span th:replace="~{fragments :: type(${node.cert().certType()})}"></span>
+        <a th:href="${node.cert().detailUrl()}" class="fw-semibold text-decoration-none" th:text="${node.cert().commonName()}">CA</a>
+        <span th:replace="~{fragments :: status(${node.cert().status()})}"></span>
+        <span class="small text-secondary mono" th:text="'SKI ' + ${#strings.substring(node.cert().skiHex(), 0, 8)} + '…'">SKI</span>
+        <span class="small text-secondary" th:if="${node.leafCount() > 0}" th:text="'Leaf ' + ${node.leafCount()} + '개'">Leaf</span>
+        <span class="small text-secondary" th:text="'~ ' + ${node.cert().notAfter()}">만료</span>
+    </div>
+    <ul th:unless="${node.children().isEmpty()}">
+        <th:block th:each="child : ${node.children()}">
+            <li th:replace="~{dashboard :: node(${child})}"></li>
+        </th:block>
+    </ul>
+</li>
+</th:block>
+
+<th:block th:replace="~{fragments :: scripts}"></th:block>
+</body>
+</html>
